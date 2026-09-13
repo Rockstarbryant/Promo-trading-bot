@@ -91,6 +91,8 @@ export interface TradingBot {
   max_spread_pct: string;
   max_slippage_pct: string;
   max_exposure: string;
+  max_consecutive_failures?: number;
+  max_stale_order_seconds?: number;
   last_error: string | null;
   last_pause_reason: string | null;
   started_at: string | null;

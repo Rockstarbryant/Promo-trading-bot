@@ -55,7 +55,9 @@ export default function BotDetailPage() {
       max_consecutive_failures: String(bot.max_consecutive_failures ?? 3),
       max_stale_order_seconds: String(bot.max_stale_order_seconds ?? 30),
     });
-  }, [bot?.id, bot?.max_capital, bot?.max_order_size, bot?.max_exposure, bot?.max_consecutive_failures]);
+    // Intentionally only re-seed the form when switching bots; edits stay local until Save.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bot?.id]);
 
   if (!bot) return <div className="text-sm text-ash-400">Loading…</div>;
 
