@@ -45,11 +45,17 @@ class StrategyState:
 class TradeIntent:
     """What the strategy wants to do next. The bot worker still runs this
     through eligibility, risk, and execution-decision checks before doing
-    anything."""
+    anything.
+
+    quote_amount is always the USDT (quote) notional used for risk checks
+    and volume accounting. base_qty is optional and set on SELL when the
+    strategy already holds a known base quantity from the opening BUY.
+    """
     symbol: str
     side: str  # BUY / SELL
     quote_amount: Decimal
     rationale: str
+    base_qty: Decimal | None = None
 
 
 class StrategyBase(ABC):

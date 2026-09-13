@@ -27,6 +27,37 @@ def _require(params: dict[str, Any], key: str, cast=lambda x: x):
         raise ValueError(f"Invalid value for strategy parameter {key}: {params[key]}") from exc
 
 
+
+def _sell_quote_and_base(state: StrategyState, contexts: list[MarketContext], fallback_order_size: Decimal) -> tuple[Decimal, Decimal | None]:
+    """Return (quote_amount_usdt, base_qty_or_None) for a closing SELL.
+
+    Risk and volume accounting must always use quote (USDT). Execution of
+    the sell leg should prefer the actual base quantity acquired on the
+    opening BUY so we close the position cleanly.
+    """
+    base_raw = state.data.get("position_base_qty")
+    quote_raw = state.data.get("position_quote_qty")
+    base_qty = Decimal(str(base_raw)) if base_raw is not None else None
+
+    if quote_raw is not None:
+        quote = Decimal(str(quote_raw))
+    elif base_qty is not None and contexts:
+        # Approximate quote from mid price of the held symbol if available
+        symbol = state.data.get("position_symbol")
+        ctx = next((c for c in contexts if c.symbol == symbol), contexts[0] if contexts else None)
+        if ctx is not None:
+            mid = (ctx.best_bid + ctx.best_ask) / Decimal(2)
+            quote = base_qty * mid
+        else:
+            quote = fallback_order_size
+    else:
+        quote = fallback_order_size
+
+    if quote <= 0:
+        quote = fallback_order_size
+    return quote, base_qty
+
+
 class IntervalRoundTripStrategy(StrategyBase):
     """BUY -> wait buy_interval_seconds -> SELL -> wait sell_interval_seconds -> repeat."""
 
@@ -70,9 +101,8 @@ class IntervalRoundTripStrategy(StrategyBase):
         symbol = state.data.get("position_symbol")
         if not symbol:
             return None
-        qty = state.data.get("position_base_qty")
-        return TradeIntent(symbol, "SELL", Decimal(str(qty)) if qty else self.calculate_order_size(state),
-                            "Interval round trip: closing sell leg")
+        quote, base_qty = _sell_quote_and_base(state, contexts, self.calculate_order_size(state))
+        return TradeIntent(symbol, "SELL", quote, "Interval round trip: closing sell leg", base_qty=base_qty)
 
 
 class LiquidityAwareRoundTripStrategy(StrategyBase):
@@ -125,11 +155,10 @@ class LiquidityAwareRoundTripStrategy(StrategyBase):
         if (time.time() - opened_at) < self.parameters["sell_interval_seconds"]:
             return None
         symbol = state.data.get("position_symbol")
-        qty = state.data.get("position_base_qty")
         if not symbol:
             return None
-        return TradeIntent(symbol, "SELL", Decimal(str(qty)) if qty else self.calculate_order_size(state),
-                            "Liquidity-aware: closing sell leg")
+        quote, base_qty = _sell_quote_and_base(state, contexts, self.calculate_order_size(state))
+        return TradeIntent(symbol, "SELL", quote, "Liquidity-aware: closing sell leg", base_qty=base_qty)
 
 
 class MultiPairRotationStrategy(StrategyBase):
@@ -187,11 +216,10 @@ class MultiPairRotationStrategy(StrategyBase):
         if (time.time() - opened_at) < self.parameters["sell_interval_seconds"]:
             return None
         symbol = state.data.get("position_symbol")
-        qty = state.data.get("position_base_qty")
         if not symbol:
             return None
-        return TradeIntent(symbol, "SELL", Decimal(str(qty)) if qty else self.calculate_order_size(state),
-                            "Multi-pair rotation: closing sell leg")
+        quote, base_qty = _sell_quote_and_base(state, contexts, self.calculate_order_size(state))
+        return TradeIntent(symbol, "SELL", quote, "Multi-pair rotation: closing sell leg", base_qty=base_qty)
 
 
 class LowestExecutionCostStrategy(StrategyBase):
@@ -241,11 +269,10 @@ class LowestExecutionCostStrategy(StrategyBase):
         if (time.time() - opened_at) < self.parameters["sell_interval_seconds"]:
             return None
         symbol = state.data.get("position_symbol")
-        qty = state.data.get("position_base_qty")
         if not symbol:
             return None
-        return TradeIntent(symbol, "SELL", Decimal(str(qty)) if qty else self.calculate_order_size(state),
-                            "Lowest execution cost: closing sell leg")
+        quote, base_qty = _sell_quote_and_base(state, contexts, self.calculate_order_size(state))
+        return TradeIntent(symbol, "SELL", quote, "Lowest execution cost: closing sell leg", base_qty=base_qty)
 
 
 class VolumeTargetSchedulerStrategy(StrategyBase):
@@ -312,8 +339,7 @@ class VolumeTargetSchedulerStrategy(StrategyBase):
         if (time.time() - opened_at) < interval:
             return None
         symbol = state.data.get("position_symbol")
-        qty = state.data.get("position_base_qty")
         if not symbol:
             return None
-        return TradeIntent(symbol, "SELL", Decimal(str(qty)) if qty else self.calculate_order_size(state),
-                            "Volume target scheduler: closing sell leg")
+        quote, base_qty = _sell_quote_and_base(state, contexts, self.calculate_order_size(state))
+        return TradeIntent(symbol, "SELL", quote, "Volume target scheduler: closing sell leg", base_qty=base_qty)

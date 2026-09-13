@@ -21,8 +21,8 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.encryption import get_secret_box
@@ -83,6 +83,8 @@ class BotWorker:
                 return
             bot.status = BotStatus.RUNNING
             bot.started_at = datetime.now(timezone.utc)
+            bot.last_error = None
+            bot.last_pause_reason = None
             await db.commit()
         await self._emit("bot_status", status="RUNNING")
 
@@ -139,13 +141,14 @@ class BotWorker:
             if not bot or bot.status not in (BotStatus.RUNNING,):
                 raise BotStoppedSignal()
 
-            promotion = (
-                await db.execute(
-                    select(Promotion)
-                    .options(selectinload(Promotion.pairs))
-                    .where(Promotion.id == bot.promotion_id)
-                )
-            ).scalar_one_or_none()
+            # Must eager-load pairs: check_eligibility() reads promotion.pairs.
+            # Lazy load in async context raises greenlet_spawn / await_only errors.
+            promo_result = await db.execute(
+                select(Promotion)
+                .options(selectinload(Promotion.pairs))
+                .where(Promotion.id == bot.promotion_id)
+            )
+            promotion = promo_result.scalar_one_or_none()
             if not promotion or not promotion.is_active_now():
                 await self._pause_with_reason(db, bot, "Promotion is not currently active")
                 return
@@ -300,15 +303,22 @@ class BotWorker:
 
         try:
             if not really_live:
-                book_side = decision.spread and (
-                    [(decision.spread.best_ask, Decimal("999999"))]
-                )
-                sim = simulate_market_order(
-                    symbol=intent.symbol, side=intent.side,
-                    order_book_levels=[(decision.slippage.average_execution_price, decision.slippage.filled_base_qty)]
-                    if decision.slippage else [(decision.spread.best_ask, Decimal("999999"))],
-                    quote_amount=intent.quote_amount,
-                )
+                # Prefer base_qty on SELL so we close the exact position from the BUY fill.
+                # BUY continues to size by quote_amount (USDT).
+                sim_kwargs = {
+                    "symbol": intent.symbol,
+                    "side": intent.side,
+                    "order_book_levels": (
+                        [(decision.slippage.average_execution_price, decision.slippage.filled_base_qty)]
+                        if decision.slippage
+                        else [(decision.spread.best_ask, Decimal("999999"))]
+                    ),
+                }
+                if intent.side == "SELL" and getattr(intent, "base_qty", None) is not None:
+                    sim_kwargs["base_qty"] = intent.base_qty
+                else:
+                    sim_kwargs["quote_amount"] = intent.quote_amount
+                sim = simulate_market_order(**sim_kwargs)
                 order.quantity = symbol_filters.round_quantity(sim.filled_base_qty, market=True)
                 order.executed_quantity = order.quantity
                 order.cumulative_quote_quantity = sim.filled_quote_qty
@@ -318,18 +328,33 @@ class BotWorker:
                 order.submitted_at = datetime.now(timezone.utc)
                 order.filled_at = datetime.now(timezone.utc)
             else:
-                symbol_filters.validate_order(
-                    side=intent.side, order_type=order.order_type.value,
-                    quantity=None, price=decision.limit_price, quote_order_qty=intent.quote_amount,
-                )
-                resp = await client.place_order(
-                    symbol=intent.symbol, side=intent.side, order_type=order.order_type.value,
-                    quote_order_qty=str(intent.quote_amount) if order.order_type == OrderType.MARKET else None,
-                    quantity=str(symbol_filters.round_quantity(intent.quote_amount / decision.limit_price))
-                        if order.order_type == OrderType.LIMIT and decision.limit_price else None,
-                    price=str(decision.limit_price) if decision.limit_price else None,
-                    new_client_order_id=client_order_id,
-                )
+                # LIVE: SELL with known base_qty uses quantity; BUY / unknown uses quote.
+                use_base = intent.side == "SELL" and getattr(intent, "base_qty", None) is not None
+                if use_base:
+                    live_qty = symbol_filters.round_quantity(intent.base_qty)
+                    symbol_filters.validate_order(
+                        side=intent.side, order_type=order.order_type.value,
+                        quantity=live_qty, price=decision.limit_price, quote_order_qty=None,
+                    )
+                    resp = await client.place_order(
+                        symbol=intent.symbol, side=intent.side, order_type=order.order_type.value,
+                        quantity=str(live_qty),
+                        price=str(decision.limit_price) if decision.limit_price else None,
+                        new_client_order_id=client_order_id,
+                    )
+                else:
+                    symbol_filters.validate_order(
+                        side=intent.side, order_type=order.order_type.value,
+                        quantity=None, price=decision.limit_price, quote_order_qty=intent.quote_amount,
+                    )
+                    resp = await client.place_order(
+                        symbol=intent.symbol, side=intent.side, order_type=order.order_type.value,
+                        quote_order_qty=str(intent.quote_amount) if order.order_type == OrderType.MARKET else None,
+                        quantity=str(symbol_filters.round_quantity(intent.quote_amount / decision.limit_price))
+                            if order.order_type == OrderType.LIMIT and decision.limit_price else None,
+                        price=str(decision.limit_price) if decision.limit_price else None,
+                        new_client_order_id=client_order_id,
+                    )
                 order.binance_order_id = str(resp.get("orderId"))
                 order.status = OrderStatus.SUBMITTED if resp.get("status") not in ("FILLED",) else OrderStatus.FILLED
                 order.submitted_at = datetime.now(timezone.utc)
@@ -359,9 +384,13 @@ class BotWorker:
             state.data["position_open"] = True
             state.data["position_symbol"] = order.symbol
             state.data["position_base_qty"] = str(order.executed_quantity)
+            state.data["position_quote_qty"] = str(order.cumulative_quote_quantity or 0)
             state.data["position_opened_at"] = time.time()
         else:
             state.data["position_open"] = False
+            state.data.pop("position_base_qty", None)
+            state.data.pop("position_quote_qty", None)
+            state.data.pop("position_symbol", None)
             state.data["last_sell_at"] = time.time()
             state.data["cycles_completed"] = state.data.get("cycles_completed", 0) + 1
 

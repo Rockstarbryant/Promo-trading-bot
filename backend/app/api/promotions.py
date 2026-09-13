@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.session import get_db
-from app.db.models import Promotion, PromotionPair, Order, PromotionType
+from app.db.models import Promotion, PromotionPair, Order, OrderStatus, PromotionType
 from app.schemas.schemas import PromotionCreate, PromotionOut, PromotionProgressOut
 from app.core.security import get_current_user_id
 from app.services.promotions.engine import get_promotion_handler
@@ -79,7 +79,7 @@ async def get_promotion(promotion_id: str, user_id: str = Depends(get_current_us
 async def get_promotion_progress(promotion_id: str, user_id: str = Depends(get_current_user_id), db: AsyncSession = Depends(get_db)):
     promo = await _get_owned_promotion(promotion_id, user_id, db)
     orders = (
-        await db.execute(select(Order).where(Order.promotion_id == promotion_id, Order.status == "FILLED"))
+        await db.execute(select(Order).where(Order.promotion_id == promotion_id, Order.status == OrderStatus.FILLED))
     ).scalars().all()
     fills = [
         {"symbol": o.symbol, "side": o.side.value, "quote_qty": o.cumulative_quote_quantity, "timestamp": o.filled_at}
