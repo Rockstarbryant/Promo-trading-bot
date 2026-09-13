@@ -118,19 +118,25 @@ class RiskEngine:
             )
 
         # Capital and exposure only increase on BUY (opening a position).
+        # Tiny residual after SELL (fees / fill asymmetry) is treated as dust so
+        # a full-size BUY is not blocked when max_exposure == order_size.
         if is_buy:
-            if state.capital_deployed + proposed_order_size > self.limits.max_capital:
+            dust = max(self.limits.max_order_size * Decimal("0.002"), Decimal("0.08"))
+            effective_exposure = state.current_exposure if state.current_exposure > dust else Decimal(0)
+            effective_capital = state.capital_deployed if state.capital_deployed > dust else Decimal(0)
+
+            if effective_capital + proposed_order_size > self.limits.max_capital + dust:
                 return RiskCheckResult(
                     False,
-                    f"Order would deploy {state.capital_deployed + proposed_order_size} "
+                    f"Order would deploy {effective_capital + proposed_order_size} "
                     f"capital, exceeding max_capital {self.limits.max_capital}",
                     "WARNING",
                 )
 
-            if state.current_exposure + proposed_order_size > self.limits.max_exposure:
+            if effective_exposure + proposed_order_size > self.limits.max_exposure + dust:
                 return RiskCheckResult(
                     False,
-                    f"Order would push exposure to {state.current_exposure + proposed_order_size}, "
+                    f"Order would push exposure to {effective_exposure + proposed_order_size}, "
                     f"exceeding max_exposure {self.limits.max_exposure}",
                     "WARNING",
                 )

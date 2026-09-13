@@ -251,6 +251,28 @@ class BotWorker:
 
                 risk_state = await self._load_risk_state(db, bot)
                 risk_engine = RiskEngine(RiskLimits.from_bot(bot))
+
+                # Clamp BUY notional to remaining exposure capacity so residual
+                # dust from the prior cycle cannot block the next open.
+                if intent.side == "BUY":
+                    limits = risk_engine.limits
+                    dust = max(limits.max_order_size * Decimal("0.002"), Decimal("0.05"))
+                    effective_exposure = (
+                        risk_state.current_exposure
+                        if risk_state.current_exposure > dust
+                        else Decimal(0)
+                    )
+                    remaining = limits.max_exposure - effective_exposure
+                    if remaining <= dust:
+                        await self._pause_with_reason(
+                            db, bot,
+                            f"No exposure capacity left "
+                            f"(exposure={risk_state.current_exposure}, max={limits.max_exposure})",
+                        )
+                        return
+                    if intent.quote_amount > remaining:
+                        intent.quote_amount = remaining
+
                 pre_trade = risk_engine.check_pre_trade(intent.quote_amount, risk_state, side=intent.side)
                 if not pre_trade.allowed:
                     await self._pause_with_reason(db, bot, f"Risk check failed: {pre_trade.reason}")
@@ -304,6 +326,9 @@ class BotWorker:
                 else:
                     exposure -= o.cumulative_quote_quantity or Decimal(0)
         exposure = max(exposure, Decimal(0))
+        dust = max(Decimal(str(bot.max_order_size)) * Decimal("0.002"), Decimal("0.05"))
+        if exposure <= dust:
+            exposure = Decimal(0)
         # Capital tied up = current net long exposure (closed cycles free capital).
         capital_deployed = exposure
         return RiskState(
