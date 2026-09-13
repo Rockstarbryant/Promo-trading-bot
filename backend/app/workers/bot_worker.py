@@ -22,6 +22,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.core.encryption import get_secret_box
@@ -138,7 +139,13 @@ class BotWorker:
             if not bot or bot.status not in (BotStatus.RUNNING,):
                 raise BotStoppedSignal()
 
-            promotion = await db.get(Promotion, bot.promotion_id)
+            promotion = (
+                await db.execute(
+                    select(Promotion)
+                    .options(selectinload(Promotion.pairs))
+                    .where(Promotion.id == bot.promotion_id)
+                )
+            ).scalar_one_or_none()
             if not promotion or not promotion.is_active_now():
                 await self._pause_with_reason(db, bot, "Promotion is not currently active")
                 return
