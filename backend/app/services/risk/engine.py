@@ -70,8 +70,18 @@ class RiskEngine:
         self,
         proposed_order_size: Decimal,
         state: RiskState,
+        side: str = "BUY",
     ) -> RiskCheckResult:
+        """Validate a proposed order.
+
+        side: "BUY" or "SELL". Exposure and capital limits only apply when
+        opening/increasing a position (BUY). A SELL closes exposure and must
+        not be blocked as if it were adding risk — otherwise round-trip bots
+        stall after the first fill when max_exposure == order_size.
+        """
         proposed_order_size = _dec(proposed_order_size)
+        side_u = (side or "BUY").upper()
+        is_buy = side_u == "BUY"
 
         if state.consecutive_failures >= self.limits.max_consecutive_failures:
             return RiskCheckResult(
@@ -89,14 +99,7 @@ class RiskEngine:
                 "WARNING",
             )
 
-        if state.capital_deployed + proposed_order_size > self.limits.max_capital:
-            return RiskCheckResult(
-                False,
-                f"Order would deploy {state.capital_deployed + proposed_order_size} "
-                f"capital, exceeding max_capital {self.limits.max_capital}",
-                "WARNING",
-            )
-
+        # Volume accrues on both legs of a round trip.
         if state.daily_volume_used + proposed_order_size > self.limits.max_daily_volume:
             return RiskCheckResult(
                 False,
@@ -114,13 +117,23 @@ class RiskEngine:
                 "CRITICAL",
             )
 
-        if state.current_exposure + proposed_order_size > self.limits.max_exposure:
-            return RiskCheckResult(
-                False,
-                f"Order would push exposure to {state.current_exposure + proposed_order_size}, "
-                f"exceeding max_exposure {self.limits.max_exposure}",
-                "WARNING",
-            )
+        # Capital and exposure only increase on BUY (opening a position).
+        if is_buy:
+            if state.capital_deployed + proposed_order_size > self.limits.max_capital:
+                return RiskCheckResult(
+                    False,
+                    f"Order would deploy {state.capital_deployed + proposed_order_size} "
+                    f"capital, exceeding max_capital {self.limits.max_capital}",
+                    "WARNING",
+                )
+
+            if state.current_exposure + proposed_order_size > self.limits.max_exposure:
+                return RiskCheckResult(
+                    False,
+                    f"Order would push exposure to {state.current_exposure + proposed_order_size}, "
+                    f"exceeding max_exposure {self.limits.max_exposure}",
+                    "WARNING",
+                )
 
         return RiskCheckResult(True)
 
