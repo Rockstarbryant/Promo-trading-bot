@@ -28,7 +28,9 @@ async def bot_analytics_summary(bot_id: str, user_id: str = Depends(get_current_
             "symbol": o.symbol,
             "strategy_type": o.strategy_type.value if hasattr(o.strategy_type, "value") else o.strategy_type,
             "cumulative_quote_quantity": o.cumulative_quote_quantity,
+            "executed_quantity": o.executed_quantity,
             "commission_quote": o.commission,
+            "commission_asset": o.commission_asset,
         }
         for o in orders
     ]

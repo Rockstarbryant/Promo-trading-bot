@@ -47,7 +47,18 @@ def summarize(orders: list[dict], cycles: list[dict]) -> AnalyticsSummary:
     rejected = [o for o in orders if o["status"] == "REJECTED"]
 
     total_volume = sum((_dec(o.get("cumulative_quote_quantity", 0)) for o in filled), Decimal(0))
-    total_fees = sum((_dec(o.get("commission_quote", 0)) for o in filled), Decimal(0))
+    # commission_quote must be in USDT. Older rows may have stored base-asset
+    # commission (e.g. REZ) by mistake — if fee > 2% of that order's volume,
+    # treat it as base units and convert via avg fill price.
+    total_fees = Decimal(0)
+    for o in filled:
+        fee = _dec(o.get("commission_quote", 0))
+        vol = _dec(o.get("cumulative_quote_quantity", 0))
+        base_qty = _dec(o.get("executed_quantity", 0))
+        if fee > 0 and vol > 0 and fee > vol * Decimal("0.02") and base_qty > 0:
+            # Likely base-asset fee: fee_base * (vol/base_qty) ≈ USDT
+            fee = fee * (vol / base_qty)
+        total_fees += fee
 
     volume_by_pair: dict[str, Decimal] = {}
     volume_by_strategy: dict[str, Decimal] = {}

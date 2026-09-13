@@ -450,9 +450,29 @@ class BotWorker:
                 # Commission from fills if present
                 fills = resp.get("fills") or []
                 if fills:
-                    fee = sum(Decimal(str(f.get("commission", 0))) for f in fills)
-                    order.commission = fee
-                    order.commission_asset = fills[0].get("commissionAsset")
+                    # Binance returns commission in commissionAsset units (often the
+                    # base coin, e.g. REZ). Convert to quote (USDT) so analytics
+                    # "Fees paid" is in dollars, not base-token amount.
+                    fee_quote = Decimal(0)
+                    fee_asset = None
+                    for f in fills:
+                        c = Decimal(str(f.get("commission") or 0))
+                        asset = f.get("commissionAsset") or ""
+                        fee_asset = fee_asset or asset
+                        px = Decimal(str(f.get("price") or 0))
+                        # Quote assets: treat as already USDT (or stable)
+                        if asset in ("USDT", "USDC", "BUSD", "FDUSD", "TUSD"):
+                            fee_quote += c
+                        elif px > 0:
+                            # Base-asset fee (e.g. REZ): qty * fill price ≈ USDT
+                            fee_quote += c * px
+                        else:
+                            fee_quote += c  # last resort
+                    order.commission = fee_quote
+                    order.commission_asset = "USDT"
+                    # Keep original asset in rejection_reason-free field if needed later
+                    if fee_asset and fee_asset != "USDT":
+                        order.commission_asset = f"USDT(from {fee_asset})"
                 if order.status == OrderStatus.FILLED:
                     order.filled_at = datetime.now(timezone.utc)
 
