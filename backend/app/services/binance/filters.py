@@ -85,6 +85,18 @@ class SymbolFilters:
             return price
         return (price / tick).to_integral_value(rounding=ROUND_DOWN) * tick
 
+    def format_price(self, price) -> str:
+        """String form safe for Binance LIMIT price params."""
+        p = self.round_price(price)
+        tick = self.tick_size
+        if tick and tick != 0:
+            prec = _step_precision(tick)
+            p = p.quantize(Decimal(1).scaleb(-prec), rounding=ROUND_DOWN)
+        s = format(p, "f")
+        if "." in s:
+            s = s.rstrip("0").rstrip(".")
+        return s or "0"
+
     def round_quantity(self, quantity, market: bool = False) -> Decimal:
         quantity = _dec(quantity)
         step = self.market_step_size if market else self.step_size

@@ -309,6 +309,18 @@ class BotWorker:
                     log_event(logger, "execution_wait", bot_id=self.bot_id, symbol=intent.symbol, reason=decision.reason)
                     return
 
+                # LIVE promo bots need fills. Passive LIMIT at best bid often
+                # sits unfilled and previously also hit filter 400s; upgrade.
+                if really_live and decision.action == ExecutionAction.LIMIT:
+                    from app.services.execution.decision_engine import ExecutionDecision
+                    decision = ExecutionDecision(
+                        action=ExecutionAction.MARKET,
+                        reason=(decision.reason or "") + " [LIVE: LIMIT upgraded to MARKET]",
+                        spread=decision.spread,
+                        slippage=decision.slippage,
+                        limit_price=None,
+                    )
+
                 await self._execute_intent(
                     db, bot, promotion, strategy, intent, decision, symbol_filters,
                     client, really_live, strategy_config.strategy_type,
@@ -439,19 +451,44 @@ class BotWorker:
                         new_client_order_id=client_order_id,
                     )
                 else:
-                    symbol_filters.validate_order(
-                        side=intent.side, order_type=order.order_type.value,
-                        quantity=None, price=decision.limit_price, quote_order_qty=intent.quote_amount,
-                    )
                     order.quote_quantity = intent.quote_amount
-                    resp = await client.place_order(
-                        symbol=intent.symbol, side=intent.side, order_type=order.order_type.value,
-                        quote_order_qty=str(intent.quote_amount) if order.order_type == OrderType.MARKET else None,
-                        quantity=str(symbol_filters.round_quantity(intent.quote_amount / decision.limit_price))
-                            if order.order_type == OrderType.LIMIT and decision.limit_price else None,
-                        price=str(decision.limit_price) if decision.limit_price else None,
-                        new_client_order_id=client_order_id,
-                    )
+                    if order.order_type == OrderType.MARKET:
+                        symbol_filters.validate_order(
+                            side=intent.side, order_type="MARKET",
+                            quantity=None, price=None, quote_order_qty=intent.quote_amount,
+                        )
+                        resp = await client.place_order(
+                            symbol=intent.symbol, side=intent.side, order_type="MARKET",
+                            quote_order_qty=str(intent.quote_amount),
+                            new_client_order_id=client_order_id,
+                        )
+                    else:
+                        # LIMIT: strict LOT_SIZE + PRICE_FILTER formatting
+                        limit_px = decision.limit_price
+                        if limit_px is None or limit_px <= 0:
+                            raise BinanceError("LIMIT order missing limit_price")
+                        raw_qty = intent.quote_amount / limit_px
+                        live_qty = symbol_filters.round_quantity(raw_qty, market=False)
+                        qty_str = symbol_filters.format_quantity(live_qty, market=False)
+                        live_qty = Decimal(qty_str)
+                        price_str = symbol_filters.format_price(limit_px)
+                        if live_qty <= 0:
+                            raise BinanceError(
+                                f"LIMIT qty rounded to zero (quote={intent.quote_amount}, price={limit_px})"
+                            )
+                        order.quantity = live_qty
+                        order.price = Decimal(price_str)
+                        symbol_filters.validate_order(
+                            side=intent.side, order_type="LIMIT",
+                            quantity=live_qty, price=Decimal(price_str), quote_order_qty=None,
+                        )
+                        resp = await client.place_order(
+                            symbol=intent.symbol, side=intent.side, order_type="LIMIT",
+                            quantity=qty_str,
+                            price=price_str,
+                            time_in_force="GTC",
+                            new_client_order_id=client_order_id,
+                        )
                 order.binance_order_id = str(resp.get("orderId"))
                 order.status = OrderStatus.SUBMITTED if resp.get("status") not in ("FILLED",) else OrderStatus.FILLED
                 order.submitted_at = datetime.now(timezone.utc)
