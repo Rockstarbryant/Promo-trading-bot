@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -87,8 +88,9 @@ async def get_bot(bot_id: str, user_id: str = Depends(get_current_user_id), db: 
 @router.post("/{bot_id}/start", response_model=BotActionOut)
 async def start_bot(bot_id: str, user_id: str = Depends(get_current_user_id), db: AsyncSession = Depends(get_db)):
     bot = await _get_owned_bot(bot_id, user_id, db)
-    if bot.status == BotStatus.RUNNING:
-        return BotActionOut(id=bot.id, status=bot.status.value, message="Bot already running")
+    if bot_runner_registry.is_running(bot.id):
+        return BotActionOut(id=bot.id, status=bot.status.value if hasattr(bot.status, "value") else str(bot.status), message="Bot already running")
+    # DB may still say RUNNING after a process restart while the worker is gone.
     bot.status = BotStatus.STARTING
     await db.commit()
     bot_runner_registry.start(bot.id, AsyncSessionLocal, ws_manager.broadcast)
@@ -99,6 +101,10 @@ async def start_bot(bot_id: str, user_id: str = Depends(get_current_user_id), db
 async def pause_bot(bot_id: str, user_id: str = Depends(get_current_user_id), db: AsyncSession = Depends(get_db)):
     bot = await _get_owned_bot(bot_id, user_id, db)
     bot_runner_registry.pause(bot.id, True)
+    # Persist status so the worker's next tick (or any process) honors pause
+    # even if the in-memory registry lost the worker after a deploy/restart.
+    bot.status = BotStatus.PAUSED
+    await db.commit()
     return BotActionOut(id=bot.id, status="PAUSED", message="Pause requested")
 
 
@@ -106,6 +112,11 @@ async def pause_bot(bot_id: str, user_id: str = Depends(get_current_user_id), db
 async def resume_bot(bot_id: str, user_id: str = Depends(get_current_user_id), db: AsyncSession = Depends(get_db)):
     bot = await _get_owned_bot(bot_id, user_id, db)
     bot_runner_registry.pause(bot.id, False)
+    bot.status = BotStatus.RUNNING
+    await db.commit()
+    # If the process restarted and the worker is gone, start a new one.
+    if not bot_runner_registry.is_running(bot.id):
+        bot_runner_registry.start(bot.id, AsyncSessionLocal, ws_manager.broadcast)
     return BotActionOut(id=bot.id, status="RUNNING", message="Resume requested")
 
 
@@ -113,6 +124,9 @@ async def resume_bot(bot_id: str, user_id: str = Depends(get_current_user_id), d
 async def stop_bot(bot_id: str, user_id: str = Depends(get_current_user_id), db: AsyncSession = Depends(get_db)):
     bot = await _get_owned_bot(bot_id, user_id, db)
     bot_runner_registry.stop(bot.id)
+    bot.status = BotStatus.STOPPED
+    bot.stopped_at = datetime.now(timezone.utc)
+    await db.commit()
     return BotActionOut(id=bot.id, status="STOPPED", message="Stop requested")
 
 

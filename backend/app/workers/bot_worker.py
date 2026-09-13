@@ -86,24 +86,53 @@ class BotWorker:
             bot.last_error = None
             bot.last_pause_reason = None
             await db.commit()
+            # Rebuild in-memory strategy state from filled orders so a restart
+            # does not open a second BUY while exposure is already at the limit.
+            await self._recover_strategy_state(db)
         await self._emit("bot_status", status="RUNNING")
 
+        terminal = False
         try:
             while not self._stop_requested:
-                if self._pause_requested:
+                # Honor DB status so Pause/Stop work even after process restart
+                # when the in-memory registry no longer holds this worker.
+                async with self._session_factory() as db:
+                    bot = await db.get(TradingBot, self.bot_id)
+                    if not bot:
+                        terminal = True
+                        break
+                    db_status = bot.status
+                    if hasattr(db_status, "value"):
+                        db_status = db_status.value
+
+                if db_status == BotStatus.STOPPED.value or db_status == "STOPPED":
+                    terminal = True
+                    break
+
+                if (
+                    self._pause_requested
+                    or db_status == BotStatus.PAUSED.value
+                    or db_status == "PAUSED"
+                ):
                     await self._set_status(BotStatus.PAUSED)
                     await asyncio.sleep(TICK_INTERVAL_SECONDS)
                     continue
+
                 await self._set_status(BotStatus.RUNNING)
-                await self._tick(settings)
+                try:
+                    await self._tick(settings)
+                except BotStoppedSignal:
+                    # Tick saw non-RUNNING status (e.g. stop mid-tick).
+                    terminal = True
+                    break
                 await asyncio.sleep(TICK_INTERVAL_SECONDS)
-        except BotStoppedSignal:
-            pass
         except Exception as exc:  # noqa: BLE001 - top-level worker safety net
             await self._handle_fatal_error(exc)
+            terminal = True
         finally:
-            await self._set_status(BotStatus.STOPPED, stopped=True)
-            await self._emit("bot_status", status="STOPPED")
+            if terminal or self._stop_requested:
+                await self._set_status(BotStatus.STOPPED, stopped=True)
+                await self._emit("bot_status", status="STOPPED")
 
     async def _set_status(self, status: BotStatus, stopped: bool = False, error: str | None = None) -> None:
         async with self._session_factory() as db:
@@ -138,8 +167,14 @@ class BotWorker:
     async def _tick(self, settings) -> None:
         async with self._session_factory() as db:
             bot = await db.get(TradingBot, self.bot_id)
-            if not bot or bot.status not in (BotStatus.RUNNING,):
+            if not bot:
                 raise BotStoppedSignal()
+            st = bot.status.value if hasattr(bot.status, "value") else bot.status
+            if st == "STOPPED":
+                raise BotStoppedSignal()
+            if st != "RUNNING":
+                # PAUSED or other — skip this tick without killing the worker loop
+                return
 
             # Must eager-load pairs: check_eligibility() reads promotion.pairs.
             # Lazy load in async context raises greenlet_spawn / await_only errors.
@@ -216,7 +251,7 @@ class BotWorker:
 
                 risk_state = await self._load_risk_state(db, bot)
                 risk_engine = RiskEngine(RiskLimits.from_bot(bot))
-                pre_trade = risk_engine.check_pre_trade(intent.quote_amount, risk_state)
+                pre_trade = risk_engine.check_pre_trade(intent.quote_amount, risk_state, side=intent.side)
                 if not pre_trade.allowed:
                     await self._pause_with_reason(db, bot, f"Risk check failed: {pre_trade.reason}")
                     return
@@ -266,10 +301,11 @@ class BotWorker:
                     daily_volume += o.cumulative_quote_quantity or Decimal(0)
                 if o.side == OrderSide.BUY:
                     exposure += o.cumulative_quote_quantity or Decimal(0)
-                    capital_deployed += o.cumulative_quote_quantity or Decimal(0)
                 else:
                     exposure -= o.cumulative_quote_quantity or Decimal(0)
         exposure = max(exposure, Decimal(0))
+        # Capital tied up = current net long exposure (closed cycles free capital).
+        capital_deployed = exposure
         return RiskState(
             daily_volume_used=daily_volume,
             daily_loss_so_far=daily_loss,
@@ -377,6 +413,48 @@ class BotWorker:
             db.add(RiskEvent(bot_id=bot.id, severity=RiskEventSeverity.WARNING, reason=f"Order rejected: {exc}"))
             await db.commit()
             await self._emit("risk_warning", reason=f"Order rejected: {exc}", symbol=intent.symbol)
+
+
+    async def _recover_strategy_state(self, db: AsyncSession) -> None:
+        """If the last filled order was a BUY with no matching SELL after it,
+        treat the position as still open so the next tick sells instead of
+        buying again (which would fail max_exposure).
+        """
+        orders = (
+            await db.execute(
+                select(Order)
+                .where(Order.bot_id == self.bot_id, Order.status == OrderStatus.FILLED)
+                .order_by(Order.filled_at.asc(), Order.created_at.asc())
+            )
+        ).scalars().all()
+        state = self.strategy_state
+        state.data.clear()
+        cycles = 0
+        open_buy = None
+        for o in orders:
+            if o.side == OrderSide.BUY:
+                open_buy = o
+            elif o.side == OrderSide.SELL and open_buy is not None:
+                open_buy = None
+                cycles += 1
+        state.data["cycles_completed"] = cycles
+        if open_buy is not None:
+            state.data["position_open"] = True
+            state.data["position_symbol"] = open_buy.symbol
+            state.data["position_base_qty"] = str(open_buy.executed_quantity or 0)
+            state.data["position_quote_qty"] = str(open_buy.cumulative_quote_quantity or 0)
+            # Allow SELL immediately (do not wait sell_interval after recovery).
+            state.data["position_opened_at"] = 0
+            log_event(
+                logger, "strategy_state_recovered",
+                bot_id=self.bot_id,
+                symbol=open_buy.symbol,
+                base_qty=state.data["position_base_qty"],
+                quote_qty=state.data["position_quote_qty"],
+                cycles_completed=cycles,
+            )
+        else:
+            state.data["position_open"] = False
 
     def _update_strategy_state(self, strategy, order: Order) -> None:
         state = self.strategy_state
