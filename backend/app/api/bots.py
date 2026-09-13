@@ -52,13 +52,7 @@ async def create_bot(payload: TradingBotCreate, user_id: str = Depends(get_curre
         )
     if payload.mode == "LIVE" and not account.can_trade:
         raise HTTPException(status_code=400, detail="Connected Binance account does not have trading permission")
-    if payload.mode == "LIVE" and account.can_withdraw:
-        raise HTTPException(
-            status_code=400,
-            detail="This Binance API key has withdrawal permission enabled. For safety, disable "
-                   "withdrawals on the API key before using it for live trading.",
-        )
-
+    
     bot = TradingBot(
         user_id=user_id, name=payload.name, binance_account_id=account.id, promotion_id=promo.id,
         strategy_config_id=strategy_config.id, mode=payload.mode,

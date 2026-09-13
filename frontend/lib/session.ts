@@ -21,7 +21,7 @@ export async function setSessionCookie(token: string) {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60, // 1 hour, matches backend ACCESS_TOKEN_EXPIRE_MINUTES default
+    maxAge: 60 * 60 * 24 * 7, // 7 days
   });
 }
 

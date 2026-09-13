@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # Auth
     jwt_secret_key: str = "insecure-dev-key-change-me"
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60
+    access_token_expire_minutes: int = 10080
 
     # App
     cors_origins: str = "http://localhost:3000"
