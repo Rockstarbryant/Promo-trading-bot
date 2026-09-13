@@ -389,10 +389,22 @@ class BotWorker:
                 order.submitted_at = datetime.now(timezone.utc)
                 order.filled_at = datetime.now(timezone.utc)
             else:
-                # LIVE: SELL with known base_qty uses quantity; BUY / unknown uses quote.
+                # LIVE: SELL must use base quantity capped to free balance (fees often
+                # leave slightly less free than the BUY executedQty). BUY uses quote.
                 use_base = intent.side == "SELL" and getattr(intent, "base_qty", None) is not None
                 if use_base:
-                    live_qty = symbol_filters.round_quantity(intent.base_qty)
+                    desired = Decimal(str(intent.base_qty))
+                    free = await self._free_base_balance(client, intent.symbol)
+                    # Cap to free balance; leave a tiny haircut for fee/rounding dust.
+                    sellable = min(desired, free) if free is not None else desired
+                    sellable = sellable * Decimal("0.999")
+                    live_qty = symbol_filters.round_quantity(sellable, market=True)
+                    if live_qty <= 0:
+                        raise BinanceError(
+                            f"SELL size rounded to zero "
+                            f"(desired={desired}, free={free})"
+                        )
+                    order.quantity = live_qty
                     symbol_filters.validate_order(
                         side=intent.side, order_type=order.order_type.value,
                         quantity=live_qty, price=decision.limit_price, quote_order_qty=None,
@@ -408,6 +420,7 @@ class BotWorker:
                         side=intent.side, order_type=order.order_type.value,
                         quantity=None, price=decision.limit_price, quote_order_qty=intent.quote_amount,
                     )
+                    order.quote_quantity = intent.quote_amount
                     resp = await client.place_order(
                         symbol=intent.symbol, side=intent.side, order_type=order.order_type.value,
                         quote_order_qty=str(intent.quote_amount) if order.order_type == OrderType.MARKET else None,
@@ -421,6 +434,14 @@ class BotWorker:
                 order.submitted_at = datetime.now(timezone.utc)
                 order.executed_quantity = Decimal(str(resp.get("executedQty", "0")))
                 order.cumulative_quote_quantity = Decimal(str(resp.get("cummulativeQuoteQty", "0")))
+                if order.quantity == 0 and order.executed_quantity:
+                    order.quantity = order.executed_quantity
+                # Commission from fills if present
+                fills = resp.get("fills") or []
+                if fills:
+                    fee = sum(Decimal(str(f.get("commission", 0))) for f in fills)
+                    order.commission = fee
+                    order.commission_asset = fills[0].get("commissionAsset")
                 if order.status == OrderStatus.FILLED:
                     order.filled_at = datetime.now(timezone.utc)
 
@@ -439,6 +460,29 @@ class BotWorker:
             await db.commit()
             await self._emit("risk_warning", reason=f"Order rejected: {exc}", symbol=intent.symbol)
 
+
+
+    async def _free_base_balance(self, client: BinanceSpotClient, symbol: str) -> Decimal | None:
+        """Return free balance of the base asset for symbol (e.g. REZ for REZUSDT).
+
+        Used on LIVE SELL so we never request more than Binance will allow after fees.
+        Returns None if the account cannot be read (caller falls back to desired qty).
+        """
+        try:
+            # REZUSDT -> REZ (spot symbols end with quote asset; common quotes listed)
+            quote_suffixes = ("USDT", "USDC", "BUSD", "BTC", "ETH", "BNB", "FDUSD", "TUSD")
+            base = symbol
+            for q in quote_suffixes:
+                if symbol.endswith(q) and len(symbol) > len(q):
+                    base = symbol[: -len(q)]
+                    break
+            acct = await client.get_account()
+            for bal in acct.get("balances") or []:
+                if bal.get("asset") == base:
+                    return Decimal(str(bal.get("free") or "0"))
+            return Decimal(0)
+        except Exception:
+            return None
 
     async def _recover_strategy_state(self, db: AsyncSession) -> None:
         """If the last filled order was a BUY with no matching SELL after it,

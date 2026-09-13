@@ -121,7 +121,7 @@ class RiskEngine:
         # Tiny residual after SELL (fees / fill asymmetry) is treated as dust so
         # a full-size BUY is not blocked when max_exposure == order_size.
         if is_buy:
-            dust = max(self.limits.max_order_size * Decimal("0.002"), Decimal("0.08"))
+            dust = max(self.limits.max_order_size * Decimal("0.002"), Decimal("0.05"))
             effective_exposure = state.current_exposure if state.current_exposure > dust else Decimal(0)
             effective_capital = state.capital_deployed if state.capital_deployed > dust else Decimal(0)
 
