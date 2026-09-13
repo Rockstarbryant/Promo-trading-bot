@@ -400,14 +400,20 @@ class BotWorker:
                 if use_base:
                     desired = Decimal(str(intent.base_qty))
                     free = await self._free_base_balance(client, intent.symbol)
-                    # Cap to free balance; leave a tiny haircut for fee/rounding dust.
+                    # Cap to free balance, then haircut, then LOT_SIZE step (not market step=0).
                     sellable = min(desired, free) if free is not None else desired
-                    sellable = sellable * Decimal("0.999")
+                    if free is not None and free <= 0:
+                        raise BinanceError(
+                            f"No free base balance to SELL (desired={desired}, free={free})"
+                        )
+                    sellable = sellable * Decimal("0.998")
                     live_qty = symbol_filters.round_quantity(sellable, market=True)
+                    qty_str = symbol_filters.format_quantity(live_qty, market=True)
+                    live_qty = Decimal(qty_str)
                     if live_qty <= 0:
                         raise BinanceError(
                             f"SELL size rounded to zero "
-                            f"(desired={desired}, free={free})"
+                            f"(desired={desired}, free={free}, step={symbol_filters.step_size})"
                         )
                     order.quantity = live_qty
                     symbol_filters.validate_order(
@@ -416,7 +422,7 @@ class BotWorker:
                     )
                     resp = await client.place_order(
                         symbol=intent.symbol, side=intent.side, order_type=order.order_type.value,
-                        quantity=str(live_qty),
+                        quantity=qty_str,
                         price=str(decision.limit_price) if decision.limit_price else None,
                         new_client_order_id=client_order_id,
                     )

@@ -88,9 +88,27 @@ class SymbolFilters:
     def round_quantity(self, quantity, market: bool = False) -> Decimal:
         quantity = _dec(quantity)
         step = self.market_step_size if market else self.step_size
+        # Binance often sets MARKET_LOT_SIZE.stepSize to 0 ("no extra limit").
+        # Still must respect LOT_SIZE.stepSize or the order is rejected.
+        if step == 0:
+            step = self.step_size
         if step == 0:
             return quantity
-        return (quantity / step).to_integral_value(rounding=ROUND_DOWN) * step
+        rounded = (quantity / step).to_integral_value(rounding=ROUND_DOWN) * step
+        return rounded.normalize() if rounded == rounded.to_integral() else rounded
+
+    def format_quantity(self, quantity: Decimal, market: bool = False) -> str:
+        """String form safe for Binance query params (no excess decimals)."""
+        q = self.round_quantity(quantity, market=market)
+        step = self.market_step_size if market and self.market_step_size != 0 else self.step_size
+        if step and step != 0:
+            prec = _step_precision(step)
+            q = q.quantize(Decimal(1).scaleb(-prec), rounding=ROUND_DOWN)
+        # Strip trailing zeros: 4983.000 -> 4983
+        s = format(q, "f")
+        if "." in s:
+            s = s.rstrip("0").rstrip(".")
+        return s or "0"
 
     def validate_order(
         self,
@@ -121,11 +139,16 @@ class SymbolFilters:
             min_qty = self.market_min_qty if is_market else self.min_qty
             max_qty = self.market_max_qty if is_market else self.max_qty
             step = self.market_step_size if is_market else self.step_size
-            if quantity < min_qty or (max_qty and quantity > max_qty):
+            if step == 0:
+                step = self.step_size
+            # Market min can be 0 — fall back to LOT min
+            if is_market and min_qty == 0:
+                min_qty = self.min_qty
+            if quantity < min_qty or (max_qty and max_qty != 0 and quantity > max_qty):
                 raise BinanceFilterError(
                     f"Quantity {quantity} outside allowed range [{min_qty}, {max_qty}] for {self.symbol}"
                 )
-            if step and (quantity % step) != 0:
+            if step and step != 0 and (quantity % step) != 0:
                 raise BinanceFilterError(f"Quantity {quantity} does not respect step size {step}")
 
         # NOTIONAL check
