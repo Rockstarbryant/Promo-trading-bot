@@ -311,8 +311,13 @@ class BotWorker:
         daily_loss = Decimal(0)
         exposure = Decimal(0)
         capital_deployed = Decimal(0)
+        # Only count rejects after the current run started so Stop→Start
+        # clears a failure streak without deleting order history.
         consecutive_failures = 0
+        started = bot.started_at
         for o in reversed(orders):
+            if started and o.created_at and o.created_at < started:
+                break
             if o.status == OrderStatus.REJECTED:
                 consecutive_failures += 1
             elif o.status == OrderStatus.FILLED:

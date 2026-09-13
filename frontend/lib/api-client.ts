@@ -66,6 +66,10 @@ export const api = {
   stopBot: (id: string) => request<{ status: string; message: string }>(`bots/${id}/stop`, { method: "POST" }),
   emergencyStopBot: (id: string) =>
     request<{ status: string; message: string }>(`bots/${id}/emergency-stop`, { method: "POST" }),
+  updateBot: (id: string, payload: Record<string, unknown>) =>
+    request<TradingBot>(`bots/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteBot: (id: string) =>
+    request<void>(`bots/${id}`, { method: "DELETE" }),
 
   // Orders
   listOrders: (params?: { bot_id?: string; symbol?: string }) => {

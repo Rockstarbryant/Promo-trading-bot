@@ -8,7 +8,7 @@ import { Panel, PanelBody, PanelHeader, PanelTitle } from "@/components/ui/panel
 import { Badge, statusTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatUsd, formatPct, formatDateTime, formatNumber } from "@/lib/utils";
-import { Play, Pause, Square, AlertOctagon } from "lucide-react";
+import { Play, Pause, Square, AlertOctagon, Trash2, Save } from "lucide-react";
 
 const POLL_MS = 4000;
 
@@ -18,6 +18,9 @@ export default function BotDetailPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [busy, setBusy] = useState(false);
+  const [editLimits, setEditLimits] = useState(false);
+  const [limitForm, setLimitForm] = useState<Record<string, string>>({});
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const [b, o] = await Promise.all([
@@ -38,6 +41,21 @@ export default function BotDetailPage() {
     const interval = setInterval(refresh, POLL_MS);
     return () => clearInterval(interval);
   }, [refresh]);
+
+  useEffect(() => {
+    if (!bot) return;
+    setLimitForm({
+      max_capital: String(bot.max_capital),
+      max_order_size: String(bot.max_order_size),
+      max_daily_volume: String(bot.max_daily_volume),
+      max_daily_loss: String(bot.max_daily_loss),
+      max_spread_pct: String(bot.max_spread_pct),
+      max_slippage_pct: String(bot.max_slippage_pct),
+      max_exposure: String(bot.max_exposure),
+      max_consecutive_failures: String(bot.max_consecutive_failures ?? 3),
+      max_stale_order_seconds: String(bot.max_stale_order_seconds ?? 30),
+    });
+  }, [bot?.id, bot?.max_capital, bot?.max_order_size, bot?.max_exposure, bot?.max_consecutive_failures]);
 
   if (!bot) return <div className="text-sm text-ash-400">Loading…</div>;
 
@@ -104,6 +122,22 @@ export default function BotDetailPage() {
           >
             <AlertOctagon size={16} /> Emergency stop
           </Button>
+          {(bot.status === "STOPPED" || bot.status === "ERROR") && (
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (confirm("Delete this bot permanently? Order history for this bot may be removed.")) {
+                  run(async () => {
+                    await api.deleteBot(bot.id);
+                    window.location.href = "/bots";
+                  });
+                }
+              }}
+              disabled={busy}
+            >
+              <Trash2 size={16} /> Delete
+            </Button>
+          )}
         </div>
       </div>
 
@@ -126,15 +160,92 @@ export default function BotDetailPage() {
       </div>
 
       <Panel>
-        <PanelHeader><PanelTitle>Risk limits</PanelTitle></PanelHeader>
+        <PanelHeader className="flex items-center justify-between gap-2">
+          <PanelTitle>Risk limits</PanelTitle>
+          <div className="flex gap-2">
+            {!editLimits ? (
+              <Button variant="secondary" onClick={() => setEditLimits(true)} disabled={busy}>
+                Edit
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => setEditLimits(false)}
+                  disabled={busy}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() =>
+                    run(async () => {
+                      const payload: Record<string, number> = {};
+                      for (const [k, v] of Object.entries(limitForm)) {
+                        if (v === "" || v == null) continue;
+                        payload[k] = Number(v);
+                      }
+                      await api.updateBot(bot.id, payload);
+                      setEditLimits(false);
+                      setSaveMsg("Risk limits saved");
+                      setTimeout(() => setSaveMsg(null), 3000);
+                    })
+                  }
+                  disabled={busy}
+                >
+                  <Save size={16} /> Save
+                </Button>
+              </>
+            )}
+          </div>
+        </PanelHeader>
         <PanelBody className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
-          <DetailField label="Max capital" value={formatUsd(bot.max_capital)} />
-          <DetailField label="Max order size" value={formatUsd(bot.max_order_size)} />
-          <DetailField label="Max daily volume" value={formatUsd(bot.max_daily_volume)} />
-          <DetailField label="Max daily loss" value={formatUsd(bot.max_daily_loss)} />
-          <DetailField label="Max spread" value={formatPct(bot.max_spread_pct)} />
-          <DetailField label="Max slippage" value={formatPct(bot.max_slippage_pct)} />
-          <DetailField label="Max exposure" value={formatUsd(bot.max_exposure)} />
+          {editLimits ? (
+            <>
+              {(
+                [
+                  ["max_capital", "Max capital ($)"],
+                  ["max_order_size", "Max order size ($)"],
+                  ["max_daily_volume", "Max daily volume ($)"],
+                  ["max_daily_loss", "Max daily loss ($)"],
+                  ["max_spread_pct", "Max spread (%)"],
+                  ["max_slippage_pct", "Max slippage (%)"],
+                  ["max_exposure", "Max exposure ($)"],
+                  ["max_consecutive_failures", "Max consecutive failures"],
+                  ["max_stale_order_seconds", "Max stale order (s)"],
+                ] as const
+              ).map(([key, label]) => (
+                <label key={key} className="flex flex-col gap-1">
+                  <span className="text-xs text-ash-400">{label}</span>
+                  <input
+                    className="rounded border border-ink-600 bg-ink-800 px-2 py-1.5 tabular text-ash-50"
+                    type="number"
+                    step="any"
+                    value={limitForm[key] ?? ""}
+                    onChange={(e) =>
+                      setLimitForm((f) => ({ ...f, [key]: e.target.value }))
+                    }
+                  />
+                </label>
+              ))}
+            </>
+          ) : (
+            <>
+              <DetailField label="Max capital" value={formatUsd(bot.max_capital)} />
+              <DetailField label="Max order size" value={formatUsd(bot.max_order_size)} />
+              <DetailField label="Max daily volume" value={formatUsd(bot.max_daily_volume)} />
+              <DetailField label="Max daily loss" value={formatUsd(bot.max_daily_loss)} />
+              <DetailField label="Max spread" value={formatPct(bot.max_spread_pct)} />
+              <DetailField label="Max slippage" value={formatPct(bot.max_slippage_pct)} />
+              <DetailField label="Max exposure" value={formatUsd(bot.max_exposure)} />
+              <DetailField
+                label="Max consecutive failures"
+                value={String(bot.max_consecutive_failures ?? 3)}
+              />
+            </>
+          )}
+          {saveMsg && (
+            <div className="col-span-full text-sm text-market-up">{saveMsg}</div>
+          )}
         </PanelBody>
       </Panel>
 

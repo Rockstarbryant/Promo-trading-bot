@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db.session import get_db, AsyncSessionLocal
-from app.db.models import TradingBot, BotStatus, BinanceAccount, Promotion, StrategyConfiguration
+from app.db.models import TradingBot, BotStatus, BinanceAccount, Promotion, StrategyConfiguration, Order, RiskEvent, BotEvent, TradingCycle
 from app.schemas.schemas import TradingBotCreate, TradingBotOut, BotActionOut
 from app.core.security import get_current_user_id
 from app.workers.bot_worker import bot_runner_registry
@@ -89,6 +89,9 @@ async def start_bot(bot_id: str, user_id: str = Depends(get_current_user_id), db
         return BotActionOut(id=bot.id, status=bot.status.value if hasattr(bot.status, "value") else str(bot.status), message="Bot already running")
     # DB may still say RUNNING after a process restart while the worker is gone.
     bot.status = BotStatus.STARTING
+    bot.started_at = datetime.now(timezone.utc)
+    bot.last_error = None
+    bot.last_pause_reason = None
     await db.commit()
     bot_runner_registry.start(bot.id, AsyncSessionLocal, ws_manager.broadcast)
     return BotActionOut(id=bot.id, status="STARTING", message="Bot start requested")
@@ -171,3 +174,63 @@ async def emergency_stop_bot(bot_id: str, user_id: str = Depends(get_current_use
         message=f"Emergency stop executed. Cancelled {cancelled_count} outstanding order(s). "
                 f"No positions were automatically liquidated.",
     )
+
+
+from decimal import Decimal
+from typing import Optional
+from pydantic import BaseModel, Field
+
+
+class TradingBotUpdate(BaseModel):
+    """Partial update of risk limits (and optional name). Only provided fields change."""
+    name: Optional[str] = None
+    max_capital: Optional[Decimal] = None
+    max_order_size: Optional[Decimal] = None
+    max_daily_volume: Optional[Decimal] = None
+    max_daily_loss: Optional[Decimal] = None
+    max_spread_pct: Optional[Decimal] = None
+    max_slippage_pct: Optional[Decimal] = None
+    max_exposure: Optional[Decimal] = None
+    max_consecutive_failures: Optional[int] = Field(default=None, ge=1, le=100)
+    max_stale_order_seconds: Optional[int] = Field(default=None, ge=5, le=3600)
+
+
+@router.patch("/{bot_id}", response_model=TradingBotOut)
+async def update_bot(
+    bot_id: str,
+    payload: TradingBotUpdate,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    bot = await _get_owned_bot(bot_id, user_id, db)
+    data = payload.model_dump(exclude_unset=True)
+    if not data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    for key, value in data.items():
+        setattr(bot, key, value)
+    await db.commit()
+    await db.refresh(bot)
+    return bot
+
+
+@router.delete("/{bot_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_bot(bot_id: str, user_id: str = Depends(get_current_user_id), db: AsyncSession = Depends(get_db)):
+    bot = await _get_owned_bot(bot_id, user_id, db)
+    status_val = bot.status.value if hasattr(bot.status, "value") else str(bot.status)
+    if status_val in ("RUNNING", "PAUSED", "STARTING"):
+        raise HTTPException(
+            status_code=400,
+            detail="Stop the bot before deleting it.",
+        )
+    if bot_runner_registry.is_running(bot.id):
+        bot_runner_registry.stop(bot.id)
+
+    # Remove dependent rows (no ON DELETE CASCADE on these FKs).
+    for model in (RiskEvent, BotEvent, Order, TradingCycle):
+        rows = (await db.execute(select(model).where(model.bot_id == bot.id))).scalars().all()
+        for row in rows:
+            await db.delete(row)
+
+    await db.delete(bot)
+    await db.commit()
+    return None
