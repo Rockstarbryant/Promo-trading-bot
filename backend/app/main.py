@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -51,6 +52,15 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health():
         return {"status": "ok"}
+
+    # Temporary: discover Render outbound IP for Binance API allowlisting.
+    # Remove this route after you have copied the IP.
+    @app.get("/debug/egress-ip")
+    async def egress_ip():
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get("https://api.ipify.org")
+            r.raise_for_status()
+            return {"egress_ip": r.text.strip()}
 
     return app
 
