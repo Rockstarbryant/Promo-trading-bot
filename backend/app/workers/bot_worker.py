@@ -210,19 +210,27 @@ class BotWorker:
 
             try:
                 contexts: list[MarketContext] = []
+                skip_reasons: list[str] = []
+                if not eligible_pairs:
+                    skip_reasons.append(
+                        "strategy has empty eligible_pairs — edit the strategy config"
+                    )
                 for symbol in eligible_pairs:
                     eligibility = check_eligibility(promotion, symbol)
                     if not eligibility.eligible:
+                        skip_reasons.append(f"{symbol}: {eligibility.reason}")
                         continue
                     try:
                         book = await client.get_order_book(symbol, limit=50)
                     except BinanceError as exc:
                         log_event(logger, "market_data_error", severity="warning", bot_id=self.bot_id,
                                   symbol=symbol, error=exc.message)
+                        skip_reasons.append(f"{symbol}: depth error — {exc.message}")
                         continue
                     bids = [(p, q) for p, q in book.get("bids", [])]
                     asks = [(p, q) for p, q in book.get("asks", [])]
                     if not bids or not asks:
+                        skip_reasons.append(f"{symbol}: empty order book")
                         continue
                     spread = calculate_spread(bids[0][0], asks[0][0])
                     contexts.append(MarketContext(
@@ -236,7 +244,11 @@ class BotWorker:
                     ))
 
                 if not contexts:
-                    await self._pause_with_reason(db, bot, "No eligible pairs currently have usable market data")
+                    detail = "; ".join(skip_reasons[:4]) if skip_reasons else "unknown"
+                    await self._pause_with_reason(
+                        db, bot,
+                        f"No usable market data ({detail})",
+                    )
                     return
 
                 intent = strategy.should_sell(self.strategy_state, contexts) or \

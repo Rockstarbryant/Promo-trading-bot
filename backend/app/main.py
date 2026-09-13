@@ -1,6 +1,5 @@
 from contextlib import asynccontextmanager
 
-import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -13,6 +12,33 @@ from app.api import auth, accounts, promotions, strategies, bots, orders, analyt
 async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level)
+
+    # After a deploy/restart, in-memory workers are gone but DB may still say
+    # RUNNING. Re-attach workers so bots keep trading without a manual Start.
+    try:
+        from sqlalchemy import select
+        from app.db.session import AsyncSessionLocal
+        from app.db.models import TradingBot, BotStatus
+        from app.workers.bot_worker import bot_runner_registry
+        from app.api.websocket import manager as ws_manager
+
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(TradingBot).where(
+                    TradingBot.status.in_([BotStatus.RUNNING, BotStatus.STARTING, BotStatus.PAUSED])
+                )
+            )
+            bots_to_resume = result.scalars().all()
+            for bot in bots_to_resume:
+                # PAUSED stays paused in-process until user resumes; still start
+                # the worker so it can honor DB status.
+                if not bot_runner_registry.is_running(bot.id):
+                    bot_runner_registry.start(bot.id, AsyncSessionLocal, ws_manager.broadcast)
+    except Exception as exc:  # noqa: BLE001
+        # Never block startup if resume fails
+        import logging
+        logging.getLogger("promo_trader").warning("Failed to resume bots on startup: %s", exc)
+
     yield
 
 
@@ -57,6 +83,7 @@ def create_app() -> FastAPI:
     # Remove this route after you have copied the IP.
     @app.get("/debug/egress-ip")
     async def egress_ip():
+        import httpx
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get("https://api.ipify.org")
             r.raise_for_status()
