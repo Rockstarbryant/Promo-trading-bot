@@ -40,11 +40,25 @@ async def create_promotion(
     db.add(promotion)
     await db.flush()
 
-    for p in payload.pairs:
+    # Deduplicate by symbol (comma-separated UI input often repeats pairs).
+    seen: set[str] = set()
+    for pair in payload.pairs:
+        symbol = (pair.symbol or "").strip().upper()
+        if not symbol or symbol in seen:
+            continue
+        seen.add(symbol)
         db.add(PromotionPair(
-            promotion_id=promotion.id, symbol=p.symbol.upper(),
-            is_eligible=p.is_eligible, per_pair_target_volume=p.per_pair_target_volume,
+            promotion_id=promotion.id,
+            symbol=symbol,
+            is_eligible=pair.is_eligible,
+            per_pair_target_volume=pair.per_pair_target_volume,
         ))
+
+    if not seen:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one eligible pair symbol is required.",
+        )
 
     await db.commit()
     await db.refresh(promotion)

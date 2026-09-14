@@ -76,6 +76,7 @@ def create_app() -> FastAPI:
     app.include_router(websocket.router)
 
     @app.get("/health")
+    @app.head("/health")
     async def health():
         return {"status": "ok"}
 
