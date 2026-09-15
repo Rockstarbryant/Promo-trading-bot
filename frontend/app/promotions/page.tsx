@@ -8,7 +8,7 @@ import { Panel, PanelBody, PanelHeader, PanelTitle } from "@/components/ui/panel
 import { Badge, statusTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatUsd, formatDateTime } from "@/lib/utils";
-import { Plus } from "lucide-react";
+import { Plus, Bot as BotIcon } from "lucide-react";
 
 export default function PromotionsPage() {
   const [promotions, setPromotions] = useState<Promotion[] | null>(null);
@@ -45,6 +45,7 @@ export default function PromotionsPage() {
                   <th className="px-4 py-2 font-normal">Name</th>
                   <th className="px-4 py-2 font-normal">Type</th>
                   <th className="px-4 py-2 font-normal">Status</th>
+                  <th className="px-4 py-2 font-normal">Bots</th>
                   <th className="px-4 py-2 font-normal">Target</th>
                   <th className="px-4 py-2 font-normal">Ends</th>
                 </tr>
@@ -57,6 +58,16 @@ export default function PromotionsPage() {
                     </td>
                     <td className="px-4 py-3 text-ash-400">{p.promotion_type.replaceAll("_", " ")}</td>
                     <td className="px-4 py-3"><Badge tone={statusTone(p.status)}>{p.status}</Badge></td>
+                    <td className="px-4 py-3">
+                      {p.bot_count > 0 ? (
+                        <span className="inline-flex items-center gap-1.5 tabular text-ash-200">
+                          <BotIcon size={14} className="text-ash-400" />
+                          {p.running_bot_count}/{p.bot_count} running
+                        </span>
+                      ) : (
+                        <span className="text-ash-400">None</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 tabular text-ash-400">{formatUsd(p.target_volume)}</td>
                     <td className="px-4 py-3 tabular text-ash-400">{formatDateTime(p.end_time)}</td>
                   </tr>

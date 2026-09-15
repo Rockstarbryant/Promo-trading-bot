@@ -7,7 +7,7 @@ import type { TradingBot } from "@/lib/types";
 import { Panel, PanelBody, PanelHeader, PanelTitle } from "@/components/ui/panel";
 import { Badge, statusTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, formatUsd } from "@/lib/utils";
 import { Plus } from "lucide-react";
 
 export default function BotsPage() {
@@ -34,30 +34,38 @@ export default function BotsPage() {
           ) : bots.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-ash-400">No bots yet.</div>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-ink-600 text-left text-xs text-ash-400">
-                  <th className="px-4 py-2 font-normal">Name</th>
-                  <th className="px-4 py-2 font-normal">Mode</th>
-                  <th className="px-4 py-2 font-normal">Status</th>
-                  <th className="px-4 py-2 font-normal">Max order size</th>
-                  <th className="px-4 py-2 font-normal">Started</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bots.map((bot) => (
-                  <tr key={bot.id} className="border-b border-ink-600/60 last:border-0 hover:bg-ink-700/40">
-                    <td className="px-4 py-3">
-                      <Link href={`/bots/${bot.id}`} className="text-ash-50 hover:text-signal">{bot.name}</Link>
-                    </td>
-                    <td className="px-4 py-3"><Badge tone={bot.mode === "LIVE" ? "signal" : "muted"}>{bot.mode}</Badge></td>
-                    <td className="px-4 py-3"><Badge tone={statusTone(bot.status)}>{bot.status}</Badge></td>
-                    <td className="px-4 py-3 tabular text-ash-400">${bot.max_order_size}</td>
-                    <td className="px-4 py-3 tabular text-ash-400">{formatDateTime(bot.started_at)}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-ink-600 text-left text-xs text-ash-400">
+                    <th className="px-4 py-2 font-normal">Name</th>
+                    <th className="px-4 py-2 font-normal">Promotion</th>
+                    <th className="px-4 py-2 font-normal">Strategy</th>
+                    <th className="px-4 py-2 font-normal">Pairs</th>
+                    <th className="px-4 py-2 font-normal">Mode</th>
+                    <th className="px-4 py-2 font-normal">Status</th>
+                    <th className="px-4 py-2 font-normal">Initial order size</th>
+                    <th className="px-4 py-2 font-normal">Started</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {bots.map((bot) => (
+                    <tr key={bot.id} className="border-b border-ink-600/60 last:border-0 hover:bg-ink-700/40">
+                      <td className="px-4 py-3">
+                        <Link href={`/bots/${bot.id}`} className="text-ash-50 hover:text-signal">{bot.name}</Link>
+                      </td>
+                      <td className="px-4 py-3 text-ash-400">{bot.promotion_name ?? "—"}</td>
+                      <td className="px-4 py-3 text-ash-400">{bot.strategy_name ?? "—"}</td>
+                      <td className="px-4 py-3 text-ash-400">{(bot.eligible_pairs ?? []).join(", ") || "—"}</td>
+                      <td className="px-4 py-3"><Badge tone={bot.mode === "LIVE" ? "signal" : "muted"}>{bot.mode}</Badge></td>
+                      <td className="px-4 py-3"><Badge tone={statusTone(bot.status)}>{bot.status}</Badge></td>
+                      <td className="px-4 py-3 tabular text-ash-400">{formatUsd(bot.initial_order_size)}</td>
+                      <td className="px-4 py-3 tabular text-ash-400">{formatDateTime(bot.started_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </PanelBody>
       </Panel>

@@ -41,7 +41,23 @@ export interface BinanceAccount {
   last_verified_at: string | null;
 }
 
+export interface AssetBalance {
+  asset: string;
+  free: string;
+  locked: string;
+  usdt_value: string | null;
+}
+
+export interface AccountBalance {
+  account_id: string;
+  label: string;
+  balances: AssetBalance[];
+  total_usdt_value: string | null;
+  error: string | null;
+}
+
 export interface PromotionPair {
+  id?: string;
   symbol: string;
   is_eligible: boolean;
   per_pair_target_volume?: string | null;
@@ -60,6 +76,10 @@ export interface Promotion {
   max_volume: string | null;
   notes: string | null;
   rules_url: string | null;
+  pairs: PromotionPair[];
+  bot_count: number;
+  running_bot_count: number;
+  strategies_in_use: string[];
 }
 
 export interface PromotionProgress {
@@ -69,11 +89,19 @@ export interface PromotionProgress {
   remaining_volume: string | null;
 }
 
+export interface StrategyTypeInfo {
+  value: StrategyType;
+  label: string;
+  description: string;
+}
+
 export interface StrategyConfiguration {
   id: string;
   name: string;
   strategy_type: StrategyType;
   parameters: Record<string, unknown>;
+  description: string;
+  bot_count: number;
 }
 
 export interface TradingBot {
@@ -97,6 +125,24 @@ export interface TradingBot {
   last_pause_reason: string | null;
   started_at: string | null;
   stopped_at: string | null;
+  promotion_name: string | null;
+  strategy_name: string | null;
+  strategy_type: StrategyType | null;
+  initial_order_size: string | null;
+  eligible_pairs: string[];
+  binance_account_label: string | null;
+}
+
+export interface BotBalance {
+  bot_id: string;
+  symbol: string | null;
+  base_asset: string | null;
+  base_free: string | null;
+  base_locked: string | null;
+  quote_asset: string | null;
+  quote_free: string | null;
+  quote_locked: string | null;
+  error: string | null;
 }
 
 export interface Order {

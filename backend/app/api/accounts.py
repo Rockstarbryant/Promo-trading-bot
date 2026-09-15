@@ -12,11 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.db.models import BinanceAccount
 from app.db.base import utcnow
-from app.schemas.schemas import BinanceAccountCreate, BinanceAccountOut
+from app.schemas.schemas import BinanceAccountCreate, BinanceAccountOut, AccountBalanceOut, AssetBalanceOut
 from app.core.security import get_current_user_id
 from app.core.encryption import get_secret_box
 from app.services.binance.client import BinanceSpotClient
 from app.services.binance.exceptions import BinanceError
+from app.services.binance.balances import fetch_balances_with_usdt_value
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
@@ -62,8 +63,7 @@ async def list_accounts(user_id: str = Depends(get_current_user_id), db: AsyncSe
     return result.scalars().all()
 
 
-@router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_account(account_id: str, user_id: str = Depends(get_current_user_id), db: AsyncSession = Depends(get_db)):
+async def _get_owned_account(account_id: str, user_id: str, db: AsyncSession) -> BinanceAccount:
     account = (
         await db.execute(
             select(BinanceAccount).where(BinanceAccount.id == account_id, BinanceAccount.user_id == user_id)
@@ -71,5 +71,33 @@ async def delete_account(account_id: str, user_id: str = Depends(get_current_use
     ).scalar_one_or_none()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
+    return account
+
+
+@router.get("/{account_id}/balance", response_model=AccountBalanceOut)
+async def get_account_balance(account_id: str, user_id: str = Depends(get_current_user_id), db: AsyncSession = Depends(get_db)):
+    """Live Binance spot balances for this account, plus a best-effort
+    total value in USDT (stablecoins counted 1:1, everything else priced
+    via its ASSETUSDT ticker). Read-only."""
+    account = await _get_owned_account(account_id, user_id, db)
+    secret = get_secret_box().decrypt(account.encrypted_api_secret)
+    client = BinanceSpotClient(api_key=account.api_key, api_secret=secret)
+    try:
+        balances, total = await fetch_balances_with_usdt_value(client)
+        return AccountBalanceOut(
+            account_id=account.id,
+            label=account.label,
+            balances=[AssetBalanceOut(**b) for b in balances],
+            total_usdt_value=total,
+        )
+    except BinanceError as exc:
+        return AccountBalanceOut(account_id=account.id, label=account.label, balances=[], total_usdt_value=None, error=exc.message)
+    finally:
+        await client.aclose()
+
+
+@router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account(account_id: str, user_id: str = Depends(get_current_user_id), db: AsyncSession = Depends(get_db)):
+    account = await _get_owned_account(account_id, user_id, db)
     await db.delete(account)
     await db.commit()

@@ -6,8 +6,8 @@
 // ever visible to this code — the proxy attaches it server-side.
 
 import type {
-  AnalyticsSummary, BinanceAccount, Order, Promotion, PromotionProgress,
-  StrategyConfiguration, TradingBot, User,
+  AccountBalance, AnalyticsSummary, BinanceAccount, BotBalance, Order, Promotion,
+  PromotionProgress, StrategyConfiguration, StrategyTypeInfo, TradingBot, User,
 } from "@/lib/types";
 
 class ApiClientError extends Error {
@@ -39,6 +39,7 @@ export const api = {
   connectAccount: (payload: { label: string; api_key: string; api_secret: string }) =>
     request<BinanceAccount>("accounts", { method: "POST", body: JSON.stringify(payload) }),
   deleteAccount: (id: string) => request<void>(`accounts/${id}`, { method: "DELETE" }),
+  getAccountBalance: (id: string) => request<AccountBalance>(`accounts/${id}/balance`),
 
   // Promotions
   listPromotions: () => request<Promotion[]>("promotions"),
@@ -46,18 +47,26 @@ export const api = {
   getPromotionProgress: (id: string) => request<PromotionProgress>(`promotions/${id}/progress`),
   createPromotion: (payload: Record<string, unknown>) =>
     request<Promotion>("promotions", { method: "POST", body: JSON.stringify(payload) }),
+  updatePromotion: (id: string, payload: Record<string, unknown>) =>
+    request<Promotion>(`promotions/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deletePromotion: (id: string) => request<void>(`promotions/${id}`, { method: "DELETE" }),
   activatePromotion: (id: string) => request<Promotion>(`promotions/${id}/activate`, { method: "POST" }),
   endPromotion: (id: string) => request<Promotion>(`promotions/${id}/end`, { method: "POST" }),
 
   // Strategies
-  listStrategyTypes: () => request<string[]>("strategies/types"),
+  listStrategyTypes: () => request<StrategyTypeInfo[]>("strategies/types"),
   listStrategyConfigs: () => request<StrategyConfiguration[]>("strategies"),
+  getStrategyConfig: (id: string) => request<StrategyConfiguration>(`strategies/${id}`),
   createStrategyConfig: (payload: { name: string; strategy_type: string; parameters: Record<string, unknown> }) =>
     request<StrategyConfiguration>("strategies", { method: "POST", body: JSON.stringify(payload) }),
+  updateStrategyConfig: (id: string, payload: { name?: string; parameters?: Record<string, unknown> }) =>
+    request<StrategyConfiguration>(`strategies/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteStrategyConfig: (id: string) => request<void>(`strategies/${id}`, { method: "DELETE" }),
 
   // Bots
   listBots: () => request<TradingBot[]>("bots"),
   getBot: (id: string) => request<TradingBot>(`bots/${id}`),
+  getBotBalance: (id: string) => request<BotBalance>(`bots/${id}/balance`),
   createBot: (payload: Record<string, unknown>) =>
     request<TradingBot>("bots", { method: "POST", body: JSON.stringify(payload) }),
   startBot: (id: string) => request<{ status: string; message: string }>(`bots/${id}/start`, { method: "POST" }),
@@ -72,7 +81,7 @@ export const api = {
     request<void>(`bots/${id}`, { method: "DELETE" }),
 
   // Orders
-  listOrders: (params?: { bot_id?: string; symbol?: string }) => {
+  listOrders: (params?: { bot_id?: string; symbol?: string; limit?: number }) => {
     const qs = new URLSearchParams(params as Record<string, string>).toString();
     return request<Order[]>(`orders${qs ? `?${qs}` : ""}`);
   },

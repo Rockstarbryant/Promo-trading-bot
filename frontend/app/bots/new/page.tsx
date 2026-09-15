@@ -47,6 +47,8 @@ export default function NewBotPage() {
     );
   }, []);
 
+  const selectedStrategy = strategies.find((s) => s.id === strategyId);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -118,10 +120,17 @@ export default function NewBotPage() {
               </Select>
             </Field>
 
-            <Field label="Strategy configuration">
+            <Field
+              label="Strategy configuration"
+              hint={selectedStrategy ? `${selectedStrategy.description} Initial order size: ${selectedStrategy.parameters.order_size ?? "—"} USDT.` : undefined}
+            >
               <Select value={strategyId} onChange={(e) => setStrategyId(e.target.value)} required>
                 <option value="" disabled>Select a strategy</option>
-                {strategies.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                {strategies.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.bot_count} bot{s.bot_count === 1 ? "" : "s"} using it)
+                  </option>
+                ))}
               </Select>
             </Field>
 

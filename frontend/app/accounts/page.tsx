@@ -2,21 +2,28 @@
 
 import { useEffect, useState } from "react";
 import { api, ApiClientError } from "@/lib/api-client";
-import type { BinanceAccount } from "@/lib/types";
+import type { AccountBalance, BinanceAccount } from "@/lib/types";
 import { Panel, PanelBody, PanelHeader, PanelTitle } from "@/components/ui/panel";
 import { Button } from "@/components/ui/button";
 import { Input, Field } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, formatUsd } from "@/lib/utils";
 import { Trash2, ShieldAlert } from "lucide-react";
 
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<BinanceAccount[] | null>(null);
+  const [balances, setBalances] = useState<Record<string, AccountBalance>>({});
   const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
     try {
-      setAccounts(await api.listAccounts());
+      const list = await api.listAccounts();
+      setAccounts(list);
+      list.forEach((a) => {
+        api.getAccountBalance(a.id).then((b) => {
+          setBalances((prev) => ({ ...prev, [a.id]: b }));
+        }).catch(() => undefined);
+      });
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : "Could not load accounts");
     }
@@ -66,6 +73,7 @@ export default function AccountsPage() {
                   <th className="px-4 py-2 font-normal">Label</th>
                   <th className="px-4 py-2 font-normal">API key</th>
                   <th className="px-4 py-2 font-normal">Permissions</th>
+                  <th className="px-4 py-2 font-normal">Balance (USDT est.)</th>
                   <th className="px-4 py-2 font-normal">Verified</th>
                   <th className="px-4 py-2 font-normal"></th>
                 </tr>
@@ -84,6 +92,15 @@ export default function AccountsPage() {
                           Withdraw {a.can_withdraw ? "enabled" : "off"}
                         </Badge>
                       </div>
+                    </td>
+                    <td className="px-4 py-3 tabular text-ash-50">
+                      {balances[a.id]?.error ? (
+                        <span className="text-xs text-ash-400">{balances[a.id]?.error}</span>
+                      ) : balances[a.id] ? (
+                        formatUsd(balances[a.id]?.total_usdt_value)
+                      ) : (
+                        <span className="text-ash-400">…</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 tabular text-ash-400">{formatDateTime(a.last_verified_at)}</td>
                     <td className="px-4 py-3 text-right">

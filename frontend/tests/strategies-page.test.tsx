@@ -23,7 +23,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   (api.listStrategyConfigs as ReturnType<typeof vi.fn>).mockResolvedValue([]);
   (api.listStrategyTypes as ReturnType<typeof vi.fn>).mockResolvedValue([
-    "INTERVAL_ROUND_TRIP", "VOLUME_TARGET_SCHEDULER",
+    { value: "INTERVAL_ROUND_TRIP", label: "Interval round trip", description: "Buys, waits, sells, repeats." },
+    { value: "VOLUME_TARGET_SCHEDULER", label: "Volume target scheduler", description: "Paces trades against a target." },
   ]);
 });
 

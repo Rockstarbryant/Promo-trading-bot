@@ -1,17 +1,110 @@
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db.session import get_db, AsyncSessionLocal
-from app.db.models import TradingBot, BotStatus, BinanceAccount, Promotion, StrategyConfiguration, Order, RiskEvent, BotEvent, TradingCycle
-from app.schemas.schemas import TradingBotCreate, TradingBotOut, BotActionOut
+from app.db.models import (
+    TradingBot, BotStatus, BinanceAccount, Promotion, PromotionPair,
+    StrategyConfiguration, Order, RiskEvent, BotEvent, TradingCycle,
+)
+from app.schemas.schemas import (
+    TradingBotCreate, TradingBotUpdate, TradingBotOut, BotActionOut, BotBalanceOut,
+)
 from app.core.security import get_current_user_id
+from app.core.encryption import get_secret_box
+from app.services.binance.client import BinanceSpotClient
+from app.services.binance.exceptions import BinanceError
+from app.services.binance.symbol_repository import SymbolRepository
+from app.services.binance.balances import split_symbol_heuristic
 from app.workers.bot_worker import bot_runner_registry
 from app.api.websocket import manager as ws_manager
 
 router = APIRouter(prefix="/api/bots", tags=["bots"])
+
+
+def _value(v) -> str:
+    return v.value if hasattr(v, "value") else v
+
+
+def _safe_decimal(value) -> Optional[Decimal]:
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+async def _bots_to_out(bots: list[TradingBot], db: AsyncSession) -> list[TradingBotOut]:
+    """Enriches bots with the promotion/strategy/account context the UI
+    needs (initial order size, strategy in use, promotion name, connected
+    account label) in a handful of batched queries rather than N+1 per bot."""
+    promo_ids = {b.promotion_id for b in bots}
+    strategy_ids = {b.strategy_config_id for b in bots}
+    account_ids = {b.binance_account_id for b in bots}
+
+    promos: dict[str, Promotion] = {}
+    if promo_ids:
+        rows = (await db.execute(select(Promotion).where(Promotion.id.in_(promo_ids)))).scalars().all()
+        promos = {p.id: p for p in rows}
+
+    strategies: dict[str, StrategyConfiguration] = {}
+    if strategy_ids:
+        rows = (
+            await db.execute(select(StrategyConfiguration).where(StrategyConfiguration.id.in_(strategy_ids)))
+        ).scalars().all()
+        strategies = {s.id: s for s in rows}
+
+    accounts: dict[str, BinanceAccount] = {}
+    if account_ids:
+        rows = (await db.execute(select(BinanceAccount).where(BinanceAccount.id.in_(account_ids)))).scalars().all()
+        accounts = {a.id: a for a in rows}
+
+    out: list[TradingBotOut] = []
+    for bot in bots:
+        promo = promos.get(bot.promotion_id)
+        strat = strategies.get(bot.strategy_config_id)
+        account = accounts.get(bot.binance_account_id)
+        params = strat.parameters if strat and isinstance(strat.parameters, dict) else {}
+        eligible_pairs = params.get("eligible_pairs") or []
+        out.append(TradingBotOut(
+            id=bot.id,
+            name=bot.name,
+            mode=_value(bot.mode),
+            status=_value(bot.status),
+            binance_account_id=bot.binance_account_id,
+            promotion_id=bot.promotion_id,
+            strategy_config_id=bot.strategy_config_id,
+            max_capital=bot.max_capital,
+            max_order_size=bot.max_order_size,
+            max_daily_volume=bot.max_daily_volume,
+            max_daily_loss=bot.max_daily_loss,
+            max_spread_pct=bot.max_spread_pct,
+            max_slippage_pct=bot.max_slippage_pct,
+            max_exposure=bot.max_exposure,
+            max_consecutive_failures=bot.max_consecutive_failures,
+            max_stale_order_seconds=bot.max_stale_order_seconds,
+            last_error=bot.last_error,
+            last_pause_reason=bot.last_pause_reason,
+            started_at=bot.started_at,
+            stopped_at=bot.stopped_at,
+            promotion_name=promo.name if promo else None,
+            strategy_name=strat.name if strat else None,
+            strategy_type=_value(strat.strategy_type) if strat else None,
+            initial_order_size=_safe_decimal(params.get("order_size")),
+            eligible_pairs=[str(p).upper() for p in eligible_pairs],
+            binance_account_label=account.label if account else None,
+        ))
+    return out
+
+
+async def _bot_to_out(bot: TradingBot, db: AsyncSession) -> TradingBotOut:
+    return (await _bots_to_out([bot], db))[0]
 
 
 async def _get_owned_bot(bot_id: str, user_id: str, db: AsyncSession) -> TradingBot:
@@ -68,18 +161,82 @@ async def create_bot(payload: TradingBotCreate, user_id: str = Depends(get_curre
     db.add(bot)
     await db.commit()
     await db.refresh(bot)
-    return bot
+    return await _bot_to_out(bot, db)
 
 
 @router.get("", response_model=list[TradingBotOut])
 async def list_bots(user_id: str = Depends(get_current_user_id), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(TradingBot).where(TradingBot.user_id == user_id))
-    return result.scalars().all()
+    bots = result.scalars().all()
+    return await _bots_to_out(bots, db)
 
 
 @router.get("/{bot_id}", response_model=TradingBotOut)
 async def get_bot(bot_id: str, user_id: str = Depends(get_current_user_id), db: AsyncSession = Depends(get_db)):
-    return await _get_owned_bot(bot_id, user_id, db)
+    bot = await _get_owned_bot(bot_id, user_id, db)
+    return await _bot_to_out(bot, db)
+
+
+@router.get("/{bot_id}/balance", response_model=BotBalanceOut)
+async def get_bot_balance(bot_id: str, user_id: str = Depends(get_current_user_id), db: AsyncSession = Depends(get_db)):
+    """Live Binance spot balance for the base and quote asset of the pair
+    this bot trades (e.g. BTC and USDT balances for a bot trading BTCUSDT).
+    Read-only — uses the same API key the bot trades with, but never
+    submits an order. Works for PAPER bots too, so users can see the real
+    funds behind a simulation."""
+    bot = await _get_owned_bot(bot_id, user_id, db)
+    strategy_config = await db.get(StrategyConfiguration, bot.strategy_config_id)
+    account = await db.get(BinanceAccount, bot.binance_account_id)
+    if not account:
+        return BotBalanceOut(bot_id=bot.id, error="Connected Binance account not found")
+
+    symbol: Optional[str] = None
+    if strategy_config and isinstance(strategy_config.parameters, dict):
+        pairs = strategy_config.parameters.get("eligible_pairs") or []
+        if pairs:
+            symbol = str(pairs[0]).upper()
+    if not symbol:
+        promo_pair = (
+            await db.execute(
+                select(PromotionPair)
+                .where(PromotionPair.promotion_id == bot.promotion_id, PromotionPair.is_eligible.is_(True))
+            )
+        ).scalars().first()
+        if promo_pair:
+            symbol = promo_pair.symbol
+
+    if not symbol:
+        return BotBalanceOut(bot_id=bot.id, error="No eligible trading pair configured for this bot yet")
+
+    secret = get_secret_box().decrypt(account.encrypted_api_secret)
+    client = BinanceSpotClient(api_key=account.api_key, api_secret=secret)
+    try:
+        repo = SymbolRepository(client)
+        try:
+            filters = await repo.get(symbol)
+            base_asset, quote_asset = filters.base_asset, filters.quote_asset
+        except BinanceError:
+            base_asset, quote_asset = split_symbol_heuristic(symbol)
+
+        account_info = await client.get_account()
+        balances_by_asset = {b["asset"]: b for b in account_info.get("balances", [])}
+        base_bal = balances_by_asset.get(base_asset, {"free": "0", "locked": "0"})
+        quote_bal = balances_by_asset.get(quote_asset, {"free": "0", "locked": "0"})
+
+        return BotBalanceOut(
+            bot_id=bot.id,
+            symbol=symbol,
+            base_asset=base_asset,
+            base_free=_safe_decimal(base_bal.get("free")),
+            base_locked=_safe_decimal(base_bal.get("locked")),
+            quote_asset=quote_asset,
+            quote_free=_safe_decimal(quote_bal.get("free")),
+            quote_locked=_safe_decimal(quote_bal.get("locked")),
+        )
+    except BinanceError as exc:
+        return BotBalanceOut(bot_id=bot.id, symbol=symbol, error=exc.message)
+    finally:
+        await client.aclose()
 
 
 @router.post("/{bot_id}/start", response_model=BotActionOut)
@@ -137,9 +294,7 @@ async def emergency_stop_bot(bot_id: str, user_id: str = Depends(get_current_use
     bot = await _get_owned_bot(bot_id, user_id, db)
     bot_runner_registry.stop(bot.id)
 
-    from app.services.binance.client import BinanceSpotClient
-    from app.core.encryption import get_secret_box
-    from app.db.models import BinanceAccount, Order, OrderStatus
+    from app.db.models import OrderStatus
 
     account = await db.get(BinanceAccount, bot.binance_account_id)
     open_orders = (
@@ -176,25 +331,6 @@ async def emergency_stop_bot(bot_id: str, user_id: str = Depends(get_current_use
     )
 
 
-from decimal import Decimal
-from typing import Optional
-from pydantic import BaseModel, Field
-
-
-class TradingBotUpdate(BaseModel):
-    """Partial update of risk limits (and optional name). Only provided fields change."""
-    name: Optional[str] = None
-    max_capital: Optional[Decimal] = None
-    max_order_size: Optional[Decimal] = None
-    max_daily_volume: Optional[Decimal] = None
-    max_daily_loss: Optional[Decimal] = None
-    max_spread_pct: Optional[Decimal] = None
-    max_slippage_pct: Optional[Decimal] = None
-    max_exposure: Optional[Decimal] = None
-    max_consecutive_failures: Optional[int] = Field(default=None, ge=1, le=100)
-    max_stale_order_seconds: Optional[int] = Field(default=None, ge=5, le=3600)
-
-
 @router.patch("/{bot_id}", response_model=TradingBotOut)
 async def update_bot(
     bot_id: str,
@@ -210,7 +346,7 @@ async def update_bot(
         setattr(bot, key, value)
     await db.commit()
     await db.refresh(bot)
-    return bot
+    return await _bot_to_out(bot, db)
 
 
 @router.delete("/{bot_id}", status_code=status.HTTP_204_NO_CONTENT)

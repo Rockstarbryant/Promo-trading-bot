@@ -31,3 +31,14 @@ export function formatDateTime(value: string | null | undefined): string {
     month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
   });
 }
+
+/** Converts an ISO datetime string to the value a `<input type="datetime-local">`
+ * expects (YYYY-MM-DDTHH:mm, in local time, no timezone suffix). Used to
+ * prefill edit forms from API responses. */
+export function toDatetimeLocalValue(value: string | null | undefined): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}

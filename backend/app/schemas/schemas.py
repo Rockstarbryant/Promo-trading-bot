@@ -54,11 +54,34 @@ class BinanceAccountOut(BaseModel):
     # api_secret / encrypted_api_secret intentionally never included
 
 
+class AssetBalanceOut(BaseModel):
+    asset: str
+    free: Decimal
+    locked: Decimal
+    usdt_value: Optional[Decimal] = None
+
+
+class AccountBalanceOut(BaseModel):
+    account_id: str
+    label: str
+    balances: list[AssetBalanceOut] = Field(default_factory=list)
+    total_usdt_value: Optional[Decimal] = None
+    error: Optional[str] = None
+
+
 # ---- Promotions -----------------------------------------------------------
 
 class PromotionPairIn(BaseModel):
     symbol: str
     is_eligible: bool = True
+    per_pair_target_volume: Optional[Decimal] = None
+
+
+class PromotionPairOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    symbol: str
+    is_eligible: bool
     per_pair_target_volume: Optional[Decimal] = None
 
 
@@ -85,6 +108,25 @@ class PromotionCreate(BaseModel):
         return v
 
 
+class PromotionUpdate(BaseModel):
+    """Partial update. Only provided fields change. If `pairs` is provided,
+    it REPLACES the promotion's entire pair list (matches the create form's
+    comma-separated-symbols model)."""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    promotion_type: Optional[str] = None
+    status: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    target_volume: Optional[Decimal] = None
+    min_volume: Optional[Decimal] = None
+    max_volume: Optional[Decimal] = None
+    notes: Optional[str] = None
+    rules_url: Optional[str] = None
+    extra_config: Optional[dict[str, Any]] = None
+    pairs: Optional[list[PromotionPairIn]] = None
+
+
 class PromotionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -99,6 +141,10 @@ class PromotionOut(BaseModel):
     max_volume: Optional[Decimal]
     notes: Optional[str]
     rules_url: Optional[str]
+    pairs: list[PromotionPairOut] = Field(default_factory=list)
+    bot_count: int = 0
+    running_bot_count: int = 0
+    strategies_in_use: list[str] = Field(default_factory=list)
 
 
 class PromotionProgressOut(BaseModel):
@@ -116,12 +162,28 @@ class StrategyConfigurationCreate(BaseModel):
     parameters: dict[str, Any]
 
 
+class StrategyConfigurationUpdate(BaseModel):
+    """Partial update. strategy_type is intentionally not editable after
+    creation — bots reference this config and each strategy_type expects a
+    different parameter shape. Create a new configuration to switch types."""
+    name: Optional[str] = None
+    parameters: Optional[dict[str, Any]] = None
+
+
 class StrategyConfigurationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     name: str
     strategy_type: str
     parameters: dict[str, Any]
+    description: str = ""
+    bot_count: int = 0
+
+
+class StrategyTypeInfo(BaseModel):
+    value: str
+    label: str
+    description: str
 
 
 # ---- Bots -------------------------------------------------------------------
@@ -152,6 +214,20 @@ class TradingBotCreate(BaseModel):
         return v
 
 
+class TradingBotUpdate(BaseModel):
+    """Partial update of risk limits (and optional name). Only provided fields change."""
+    name: Optional[str] = None
+    max_capital: Optional[Decimal] = None
+    max_order_size: Optional[Decimal] = None
+    max_daily_volume: Optional[Decimal] = None
+    max_daily_loss: Optional[Decimal] = None
+    max_spread_pct: Optional[Decimal] = None
+    max_slippage_pct: Optional[Decimal] = None
+    max_exposure: Optional[Decimal] = None
+    max_consecutive_failures: Optional[int] = Field(default=None, ge=1, le=100)
+    max_stale_order_seconds: Optional[int] = Field(default=None, ge=5, le=3600)
+
+
 class TradingBotOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -168,16 +244,39 @@ class TradingBotOut(BaseModel):
     max_spread_pct: Decimal
     max_slippage_pct: Decimal
     max_exposure: Decimal
+    max_consecutive_failures: Optional[int] = None
+    max_stale_order_seconds: Optional[int] = None
     last_error: Optional[str] = None
     last_pause_reason: Optional[str] = None
     started_at: Optional[datetime] = None
     stopped_at: Optional[datetime] = None
+
+    # Enriched at the API layer (not columns on TradingBot itself) so the
+    # bots list/detail views don't need N extra round trips per bot.
+    promotion_name: Optional[str] = None
+    strategy_name: Optional[str] = None
+    strategy_type: Optional[str] = None
+    initial_order_size: Optional[Decimal] = None
+    eligible_pairs: list[str] = Field(default_factory=list)
+    binance_account_label: Optional[str] = None
 
 
 class BotActionOut(BaseModel):
     id: str
     status: str
     message: str
+
+
+class BotBalanceOut(BaseModel):
+    bot_id: str
+    symbol: Optional[str] = None
+    base_asset: Optional[str] = None
+    base_free: Optional[Decimal] = None
+    base_locked: Optional[Decimal] = None
+    quote_asset: Optional[str] = None
+    quote_free: Optional[Decimal] = None
+    quote_locked: Optional[Decimal] = None
+    error: Optional[str] = None
 
 
 # ---- Orders -----------------------------------------------------------------

@@ -2,21 +2,24 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { api } from "@/lib/api-client";
-import type { TradingBot, Order, AnalyticsSummary } from "@/lib/types";
+import Link from "next/link";
+import { api, ApiClientError } from "@/lib/api-client";
+import type { TradingBot, Order, AnalyticsSummary, BotBalance } from "@/lib/types";
 import { Panel, PanelBody, PanelHeader, PanelTitle } from "@/components/ui/panel";
 import { Badge, statusTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatUsd, formatPct, formatDateTime, formatNumber } from "@/lib/utils";
-import { Play, Pause, Square, AlertOctagon, Trash2, Save } from "lucide-react";
+import { Play, Pause, Square, AlertOctagon, Trash2, Save, Wallet } from "lucide-react";
 
 const POLL_MS = 4000;
+const BALANCE_POLL_MS = 15000;
 
 export default function BotDetailPage() {
   const params = useParams<{ id: string }>();
   const [bot, setBot] = useState<TradingBot | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
+  const [balance, setBalance] = useState<BotBalance | null>(null);
   const [busy, setBusy] = useState(false);
   const [editLimits, setEditLimits] = useState(false);
   const [limitForm, setLimitForm] = useState<Record<string, string>>({});
@@ -36,11 +39,25 @@ export default function BotDetailPage() {
     }
   }, [params.id]);
 
+  const refreshBalance = useCallback(async () => {
+    try {
+      setBalance(await api.getBotBalance(params.id));
+    } catch {
+      setBalance(null);
+    }
+  }, [params.id]);
+
   useEffect(() => {
     refresh();
     const interval = setInterval(refresh, POLL_MS);
     return () => clearInterval(interval);
   }, [refresh]);
+
+  useEffect(() => {
+    refreshBalance();
+    const interval = setInterval(refreshBalance, BALANCE_POLL_MS);
+    return () => clearInterval(interval);
+  }, [refreshBalance]);
 
   useEffect(() => {
     if (!bot) return;
@@ -91,7 +108,16 @@ export default function BotDetailPage() {
       </div>
 
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-ash-50">{bot.name}</h1>
+        <div>
+          <h1 className="text-lg font-semibold text-ash-50">{bot.name}</h1>
+          <p className="text-sm text-ash-400">
+            {bot.promotion_name ? (
+              <>Promotion: <Link href={`/promotions/${bot.promotion_id}`} className="text-signal">{bot.promotion_name}</Link></>
+            ) : "No promotion linked"}
+            {bot.strategy_name && <> · Strategy: {bot.strategy_name}</>}
+            {bot.binance_account_label && <> · Account: {bot.binance_account_label}</>}
+          </p>
+        </div>
         <div className="flex flex-wrap gap-2">
           {(bot.status === "STOPPED" || bot.status === "ERROR") && (
             <Button onClick={() => run(() => api.startBot(bot.id))} disabled={busy}>
@@ -160,6 +186,51 @@ export default function BotDetailPage() {
         <Stat label="Fees paid" value={formatUsd(analytics?.total_fees ?? "0")} />
         <Stat label="Success rate" value={formatPct(analytics?.execution_success_rate_pct ?? "0")} />
       </div>
+
+      <Panel>
+        <PanelHeader><PanelTitle>Strategy &amp; promotion</PanelTitle></PanelHeader>
+        <PanelBody className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
+          <DetailField label="Strategy" value={bot.strategy_name ?? "—"} />
+          <DetailField label="Strategy type" value={bot.strategy_type ? bot.strategy_type.replaceAll("_", " ") : "—"} />
+          <DetailField label="Initial order size" value={formatUsd(bot.initial_order_size)} />
+          <DetailField label="Eligible pairs" value={(bot.eligible_pairs ?? []).join(", ") || "—"} />
+          <DetailField label="Promotion" value={bot.promotion_name ?? "—"} />
+          <DetailField label="Binance account" value={bot.binance_account_label ?? "—"} />
+        </PanelBody>
+      </Panel>
+
+      <Panel>
+        <PanelHeader className="flex items-center justify-between">
+          <PanelTitle className="flex items-center gap-2"><Wallet size={14} /> Spot balance ({balance?.symbol ?? "—"})</PanelTitle>
+          <Button variant="ghost" onClick={refreshBalance} disabled={busy}>Refresh</Button>
+        </PanelHeader>
+        <PanelBody className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
+          {balance?.error ? (
+            <p className="col-span-full text-sm text-ash-400">{balance.error}</p>
+          ) : balance ? (
+            <>
+              <DetailField
+                label={`${balance.base_asset ?? "Base"} available`}
+                value={formatNumber(balance.base_free, 6)}
+              />
+              <DetailField
+                label={`${balance.base_asset ?? "Base"} locked`}
+                value={formatNumber(balance.base_locked, 6)}
+              />
+              <DetailField
+                label={`${balance.quote_asset ?? "Quote"} available`}
+                value={formatNumber(balance.quote_free, 2)}
+              />
+              <DetailField
+                label={`${balance.quote_asset ?? "Quote"} locked`}
+                value={formatNumber(balance.quote_locked, 2)}
+              />
+            </>
+          ) : (
+            <p className="col-span-full text-sm text-ash-400">Loading…</p>
+          )}
+        </PanelBody>
+      </Panel>
 
       <Panel>
         <PanelHeader className="flex items-center justify-between gap-2">
