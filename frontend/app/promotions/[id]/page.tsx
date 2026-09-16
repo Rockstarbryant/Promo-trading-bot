@@ -7,10 +7,9 @@ import { api, ApiClientError } from "@/lib/api-client";
 import type { Promotion, PromotionProgress, TradingBot } from "@/lib/types";
 import { Panel, PanelBody, PanelHeader, PanelTitle } from "@/components/ui/panel";
 import { Badge, statusTone } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { formatUsd, formatPct, formatDateTime, toDatetimeLocalValue } from "@/lib/utils";
 import { PromotionForm, type PromotionFormValues } from "@/components/promotion-form";
-import { Pencil, Trash2, Bot as BotIcon } from "lucide-react";
+import { Pencil, Trash2, Bot as BotIcon, Trophy, ExternalLink, Play, Square, Plus } from "lucide-react";
 
 export default function PromotionDetailPage() {
   const params = useParams<{ id: string }>();
@@ -40,7 +39,11 @@ export default function PromotionDetailPage() {
   }, [refresh]);
 
   if (!promotion) {
-    return <div className="text-sm text-ash-400">Loading…</div>;
+    return (
+      <div className="flex h-64 items-center justify-center bg-white border-4 border-black font-black uppercase text-2xl tracking-widest text-black">
+        <Trophy className="animate-pulse mr-4 text-black" size={40} strokeWidth={2.5} /> Loading Campaign...
+      </div>
+    );
   }
 
   async function run(action: () => Promise<unknown>) {
@@ -85,14 +88,16 @@ export default function PromotionDetailPage() {
 
   if (editing) {
     return (
-      <div className="flex flex-col gap-6">
-        <div>
-          <h1 className="text-lg font-semibold text-ash-50">Edit promotion</h1>
-          <p className="text-sm text-ash-400">Changing eligible pairs replaces the full pair list.</p>
+      <div className="flex flex-col gap-6 font-sans">
+        <div className="border-b-4 border-black pb-4">
+          <h1 className="text-3xl font-black text-black uppercase tracking-tight">Edit Promotion</h1>
+          <p className="text-sm font-bold text-black uppercase mt-1">
+            Updating pairs will overwrite the complete eligibility list.
+          </p>
         </div>
         <PromotionForm
           initial={editInitial}
-          submitLabel="Save changes"
+          submitLabel="Save Changes"
           busyLabel="Saving…"
           onCancel={() => setEditing(false)}
           onSubmit={async (payload) => {
@@ -106,158 +111,277 @@ export default function PromotionDetailPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-6 bg-white min-h-screen font-sans">
+      {/* Header & Campaign Controls */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b-4 border-black pb-6">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-lg font-semibold text-ash-50">{promotion.name}</h1>
-            <Badge tone={statusTone(promotion.status)}>{promotion.status}</Badge>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-black text-black uppercase tracking-tight">{promotion.name}</h1>
+            <Badge tone={statusTone(promotion.status)} className="border-2 border-black rounded-none uppercase font-black bg-white px-3 py-1 text-sm shadow-[2px_2px_0px_rgba(0,0,0,1)]">
+              {promotion.status}
+            </Badge>
           </div>
-          <p className="text-sm text-ash-400">{promotion.promotion_type.replaceAll("_", " ")}</p>
+          <p className="mt-2 text-sm font-bold text-black uppercase tracking-widest bg-yellow-200 inline-block px-2 py-0.5 border-2 border-black">
+            Type: {promotion.promotion_type.replaceAll("_", " ")}
+          </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+
+        <div className="flex flex-wrap items-center gap-3">
           {promotion.status === "DRAFT" && (
-            <Button onClick={() => run(() => api.activatePromotion(promotion.id))} disabled={busy}>Activate</Button>
+            <button
+              onClick={() => run(() => api.activatePromotion(promotion.id))}
+              disabled={busy}
+              className="brutalist-btn bg-green-400 text-black"
+            >
+              <Play size={18} strokeWidth={2.5} /> Activate
+            </button>
           )}
           {promotion.status === "ACTIVE" && (
-            <Button variant="danger" onClick={() => run(() => api.endPromotion(promotion.id))} disabled={busy}>End promotion</Button>
+            <button
+              onClick={() => run(() => api.endPromotion(promotion.id))}
+              disabled={busy}
+              className="brutalist-btn bg-orange-500 text-white"
+            >
+              <Square size={18} strokeWidth={2.5} /> End Campaign
+            </button>
           )}
-          <Button variant="secondary" onClick={() => setEditing(true)} disabled={busy}>
-            <Pencil size={16} /> Edit
-          </Button>
-          <Button variant="danger" onClick={handleDelete} disabled={busy}>
-            <Trash2 size={16} /> Delete
-          </Button>
+          <button
+            onClick={() => setEditing(true)}
+            disabled={busy}
+            className="brutalist-btn bg-yellow-400 text-black"
+          >
+            <Pencil size={18} strokeWidth={2.5} /> Edit
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={busy}
+            className="brutalist-btn bg-red-600 text-white"
+          >
+            <Trash2 size={18} strokeWidth={2.5} /> Delete
+          </button>
         </div>
       </div>
 
       {error && (
-        <Panel className="border-market-down/40 bg-market-down/5">
-          <PanelBody><p className="text-sm text-market-down">{error}</p></PanelBody>
+        <Panel className="border-4 border-black bg-red-400 rounded-none shadow-[4px_4px_0px_rgba(0,0,0,1)]">
+          <PanelBody className="px-5 py-4">
+            <p className="text-sm font-black uppercase text-black">
+              CRITICAL ERROR: {error}
+            </p>
+          </PanelBody>
         </Panel>
       )}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-        <Stat label="Bots attached" value={String(promotion.bot_count)} />
-        <Stat label="Bots running now" value={String(promotion.running_bot_count)} tone={promotion.running_bot_count > 0 ? "up" : undefined} />
-        <Stat label="Strategies in use" value={promotion.strategies_in_use.length ? promotion.strategies_in_use.join(", ") : "—"} />
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Stat label="Bots Attached" value={String(promotion.bot_count)} />
+        <Stat
+          label="Bots Running Now"
+          value={String(promotion.running_bot_count)}
+          highlight={promotion.running_bot_count > 0}
+        />
+        <Stat
+          label="Strategies In Use"
+          value={promotion.strategies_in_use.length ? promotion.strategies_in_use.join(", ") : "—"}
+        />
       </div>
 
-      <Panel>
-        <PanelHeader><PanelTitle>Progress</PanelTitle></PanelHeader>
-        <PanelBody className="flex flex-col gap-4">
-          <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-medium tabular text-ash-50">
+      {/* Volume Progress Tracker */}
+      <Panel className="border-4 border-black bg-white rounded-none">
+        <PanelHeader className="border-b-4 border-black px-5 py-3 bg-yellow-400">
+          <PanelTitle className="text-black font-black uppercase tracking-widest flex items-center gap-2">
+            <Trophy size={20} strokeWidth={2.5} /> Target Progress
+          </PanelTitle>
+        </PanelHeader>
+        <PanelBody className="flex flex-col gap-4 p-5 bg-gray-50">
+          <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
+            <span className="text-3xl font-black tabular-nums text-black tracking-tight">
               {formatUsd(progress?.qualifying_volume ?? "0")}
             </span>
-            <span className="text-sm text-ash-400 tabular">
-              of {formatUsd(promotion.target_volume)} target
+            <span className="text-sm font-black uppercase text-black">
+              Target: {formatUsd(promotion.target_volume)}
             </span>
           </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-ink-700">
-            <div className="h-full bg-signal transition-[width]" style={{ width: `${progressPct}%` }} />
+
+          {/* Brutalist Hard Progress Bar */}
+          <div className="h-6 w-full border-4 border-black bg-white p-0.5 shadow-[2px_2px_0px_rgba(0,0,0,1)]">
+            <div
+              className="h-full bg-green-400 border-r-2 border-black transition-all duration-300"
+              style={{ width: `${progressPct}%` }}
+            />
           </div>
-          <div className="flex justify-between text-xs text-ash-400 tabular">
-            <span>{formatPct(progress?.progress_pct)} complete</span>
-            <span>{formatUsd(progress?.remaining_volume)} remaining</span>
+
+          <div className="flex justify-between text-xs font-black uppercase tracking-widest text-black tabular-nums">
+            <span>{formatPct(progress?.progress_pct)} Complete</span>
+            <span>{formatUsd(progress?.remaining_volume)} Remaining</span>
           </div>
         </PanelBody>
       </Panel>
 
-      <Panel>
-        <PanelHeader><PanelTitle>Details</PanelTitle></PanelHeader>
-        <PanelBody className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
-          <DetailField label="Start" value={formatDateTime(promotion.start_time)} />
-          <DetailField label="End" value={formatDateTime(promotion.end_time)} />
-          <DetailField label="Min volume" value={formatUsd(promotion.min_volume)} />
-          <DetailField label="Max volume" value={formatUsd(promotion.max_volume)} />
+      {/* Campaign Parameters & Notes */}
+      <Panel className="border-4 border-black bg-white rounded-none">
+        <PanelHeader className="border-b-4 border-black px-5 py-3 bg-cyan-300">
+          <PanelTitle className="text-black font-black uppercase tracking-widest">
+            Parameters & Specifications
+          </PanelTitle>
+        </PanelHeader>
+        <PanelBody className="grid grid-cols-2 gap-6 p-5 md:grid-cols-4 bg-gray-50">
+          <DetailField label="Start Time" value={formatDateTime(promotion.start_time)} />
+          <DetailField label="End Time" value={formatDateTime(promotion.end_time)} />
+          <DetailField label="Min Volume" value={formatUsd(promotion.min_volume)} />
+          <DetailField label="Max Volume" value={formatUsd(promotion.max_volume)} />
         </PanelBody>
+
         {promotion.notes && (
-          <PanelBody className="border-t border-ink-600 pt-3">
-            <div className="text-xs text-ash-400">Notes</div>
-            <p className="mt-1 text-sm text-ash-200 whitespace-pre-wrap">{promotion.notes}</p>
+          <PanelBody className="border-t-4 border-black p-5 bg-white">
+            <div className="text-xs font-black uppercase tracking-widest text-black">Notes & Terms</div>
+            <p className="mt-2 text-sm font-bold text-black uppercase whitespace-pre-wrap leading-relaxed">
+              {promotion.notes}
+            </p>
           </PanelBody>
         )}
+
         {promotion.rules_url && (
-          <PanelBody className="border-t border-ink-600 pt-3">
-            <a href={promotion.rules_url} target="_blank" rel="noreferrer" className="text-sm text-signal">
-              Official rules ↗
+          <PanelBody className="border-t-4 border-black p-4 bg-yellow-200">
+            <a
+              href={promotion.rules_url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 text-sm font-black uppercase text-black hover:underline"
+            >
+              Official Rules & Terms <ExternalLink size={16} strokeWidth={2.5} />
             </a>
           </PanelBody>
         )}
       </Panel>
 
-      <Panel>
-        <PanelHeader><PanelTitle>Eligible pairs</PanelTitle></PanelHeader>
-        <PanelBody className="flex flex-wrap gap-1.5">
+      {/* Pair Eligibility */}
+      <Panel className="border-4 border-black bg-white rounded-none">
+        <PanelHeader className="border-b-4 border-black px-5 py-3 bg-pink-300">
+          <PanelTitle className="text-black font-black uppercase tracking-widest">
+            Eligible Trading Pairs
+          </PanelTitle>
+        </PanelHeader>
+        <PanelBody className="flex flex-wrap gap-2 p-5 bg-gray-50">
           {promotion.pairs.length === 0 ? (
-            <span className="text-sm text-ash-400">No pairs configured.</span>
+            <span className="text-sm font-black uppercase text-black">No pairs configured.</span>
           ) : (
             promotion.pairs.map((p) => (
-              <Badge key={p.id ?? p.symbol} tone={p.is_eligible ? "up" : "muted"}>{p.symbol}</Badge>
+              <Badge
+                key={p.id ?? p.symbol}
+                tone={p.is_eligible ? "up" : "muted"}
+                className="border-2 border-black rounded-none font-black text-sm px-3 py-1 bg-white uppercase shadow-[2px_2px_0px_rgba(0,0,0,1)]"
+              >
+                {p.symbol}
+              </Badge>
             ))
           )}
         </PanelBody>
       </Panel>
 
-      <Panel>
-        <PanelHeader className="flex items-center justify-between">
-          <PanelTitle>Bots running this promotion</PanelTitle>
-          <Link href="/bots/new" className="text-xs text-signal">New bot</Link>
+      {/* Attached Bots List */}
+      <Panel className="border-4 border-black bg-white rounded-none">
+        <PanelHeader className="border-b-4 border-black px-5 py-3 bg-purple-300 flex items-center justify-between">
+          <PanelTitle className="text-black font-black uppercase tracking-widest flex items-center gap-2">
+            <BotIcon size={20} strokeWidth={2.5} /> Attached Executing Bots
+          </PanelTitle>
+          <Link
+            href="/bots/new"
+            className="border-2 border-black bg-white px-3 py-1 text-xs font-black uppercase text-black hover:bg-black hover:text-white transition-none shadow-[2px_2px_0px_rgba(0,0,0,1)] flex items-center gap-1"
+          >
+            <Plus size={14} strokeWidth={3} /> New Bot
+          </Link>
         </PanelHeader>
         <PanelBody className="p-0">
           {bots.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-ash-400">
-              No bots attached yet.
+            <div className="px-5 py-12 text-center text-sm font-black uppercase tracking-widest text-black bg-gray-50">
+              No trading bots currently bound to this promotion.
             </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-ink-600 text-left text-xs text-ash-400">
-                  <th className="px-4 py-2 font-normal">Bot</th>
-                  <th className="px-4 py-2 font-normal">Strategy</th>
-                  <th className="px-4 py-2 font-normal">Mode</th>
-                  <th className="px-4 py-2 font-normal">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bots.map((bot) => (
-                  <tr key={bot.id} className="border-b border-ink-600/60 last:border-0 hover:bg-ink-700/40">
-                    <td className="px-4 py-3">
-                      <Link href={`/bots/${bot.id}`} className="flex items-center gap-2 text-ash-50 hover:text-signal">
-                        <BotIcon size={14} className="text-ash-400" /> {bot.name}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-ash-400">{bot.strategy_name ?? "—"}</td>
-                    <td className="px-4 py-3"><Badge tone={bot.mode === "LIVE" ? "signal" : "muted"}>{bot.mode}</Badge></td>
-                    <td className="px-4 py-3"><Badge tone={statusTone(bot.status)}>{bot.status}</Badge></td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b-4 border-black text-left text-xs font-black uppercase tracking-widest text-black bg-gray-200">
+                    <th className="px-5 py-4 whitespace-nowrap">Bot Name</th>
+                    <th className="px-5 py-4 whitespace-nowrap">Strategy</th>
+                    <th className="px-5 py-4 whitespace-nowrap">Mode</th>
+                    <th className="px-5 py-4 whitespace-nowrap">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y-2 divide-black">
+                  {bots.map((bot) => (
+                    <tr key={bot.id} className="hover:bg-yellow-200 transition-none bg-white">
+                      <td className="px-5 py-3">
+                        <Link
+                          href={`/bots/${bot.id}`}
+                          className="flex items-center gap-2 font-black text-black uppercase hover:underline whitespace-nowrap"
+                        >
+                          <BotIcon size={16} strokeWidth={2.5} /> {bot.name}
+                        </Link>
+                      </td>
+                      <td className="px-5 py-3 font-bold text-black uppercase">{bot.strategy_name ?? "—"}</td>
+                      <td className="px-5 py-3">
+                        <Badge tone={bot.mode === "LIVE" ? "signal" : "muted"} className="border-2 border-black rounded-none uppercase font-black bg-white">
+                          {bot.mode}
+                        </Badge>
+                      </td>
+                      <td className="px-5 py-3">
+                        <Badge tone={statusTone(bot.status)} className="border-2 border-black rounded-none uppercase font-black bg-white">
+                          {bot.status}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </PanelBody>
       </Panel>
+
+      {/* Custom Button Scoped Styles */}
+      <style dangerouslySetInnerHTML={{__html: `
+        .brutalist-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+          border: 2px solid #000;
+          padding: 0.5rem 1rem;
+          font-size: 0.875rem;
+          font-weight: 900;
+          text-transform: uppercase;
+          transition: none;
+          box-shadow: 3px 3px 0px #000;
+        }
+        .brutalist-btn:hover:not(:disabled) {
+          background-color: #000;
+          color: #fff;
+          box-shadow: none;
+          transform: translate(2px, 2px);
+        }
+        .brutalist-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+      `}} />
     </div>
   );
 }
 
 function DetailField({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <div className="text-xs text-ash-400">{label}</div>
-      <div className="tabular text-ash-50">{value}</div>
+    <div className="flex flex-col gap-1">
+      <div className="text-xs font-black uppercase tracking-widest text-black">{label}</div>
+      <div className="text-base font-bold text-black uppercase tabular-nums truncate" title={value}>{value}</div>
     </div>
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: "up" }) {
+function Stat({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
-    <Panel className="px-4 py-3">
-      <div className="text-xs text-ash-400">{label}</div>
-      <div className={`mt-1 text-xl font-medium tabular ${tone === "up" ? "text-market-up" : "text-ash-50"}`}>
-        {value}
-      </div>
-    </Panel>
+    <div className={`border-4 border-black px-5 py-4 shadow-[4px_4px_0px_rgba(0,0,0,1)] flex flex-col justify-between ${highlight ? "bg-green-400" : "bg-white"}`}>
+      <div className="text-xs font-black uppercase tracking-widest text-black">{label}</div>
+      <div className="mt-2 text-2xl font-black tabular-nums text-black tracking-tight">{value}</div>
+    </div>
   );
 }

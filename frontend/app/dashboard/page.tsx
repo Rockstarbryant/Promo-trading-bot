@@ -5,7 +5,7 @@ import { Panel, PanelBody, PanelHeader, PanelTitle } from "@/components/ui/panel
 import { Badge, statusTone } from "@/components/ui/badge";
 import { formatUsd, formatPct, formatDateTime, formatNumber } from "@/lib/utils";
 import type { TradingBot, Promotion, PromotionProgress, BinanceAccount, AccountBalance, Order } from "@/lib/types";
-import { Plus } from "lucide-react";
+import { Plus, LayoutDashboard, MonitorX, Timer, TerminalSquare, Search } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -31,8 +31,6 @@ export default async function DashboardPage() {
     })
   );
 
-  // Real Binance spot balance in USDT, aggregated across every connected
-  // account — one failed/unverified account doesn't zero out the total.
   const accountBalances = await Promise.all(
     accounts.map((a) =>
       serverApiFetch<AccountBalance>(`/accounts/${a.id}/balance`).catch(
@@ -54,20 +52,23 @@ export default async function DashboardPage() {
     .slice(0, 3);
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-ash-50">Dashboard</h1>
-          <p className="text-sm text-ash-400">Everything running right now, at a glance.</p>
+    <div className="flex flex-col gap-6 bg-white min-h-screen p-4 md:p-8 font-sans">
+      <div className="flex items-center justify-between border-b-4 border-black pb-4 mb-4">
+        <div className="flex items-center gap-3">
+          <LayoutDashboard className="text-black" size={32} strokeWidth={2.5} />
+          <div>
+            <h1 className="text-2xl font-black text-black uppercase tracking-tight">Dashboard</h1>
+            <p className="text-sm font-bold text-black mt-1">SYSTEM OVERVIEW</p>
+          </div>
         </div>
         <Link href="/bots/new" className="hidden md:block">
-          <span className="inline-flex items-center gap-2 rounded bg-signal px-3.5 py-2 text-sm font-medium text-ink-950">
-            <Plus size={16} /> New bot
+          <span className="inline-flex items-center gap-2 border-2 border-black bg-yellow-400 px-5 py-2.5 text-sm font-black uppercase text-black hover:bg-yellow-300">
+            <Plus size={20} strokeWidth={3} /> New Bot
           </span>
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard
           label="Binance balance"
           value={accounts.length === 0 ? "—" : anyBalancePriced ? formatUsd(totalUsdtBalance) : "—"}
@@ -77,44 +78,44 @@ export default async function DashboardPage() {
         <StatCard label="Total bots" value={String(bots.length)} />
         <StatCard label="Live-mode bots" value={String(liveBots)} tone={liveBots > 0 ? "signal" : undefined} />
       </div>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard label="Active promotions" value={String(activePromotions.length)} />
-        <StatCard label="Connected accounts" value={String(accounts.length)} />
-        <StatCard label="Total promotions" value={String(promotions.length)} />
-        <StatCard label="Orders (recent)" value={String(recentOrders.length)} />
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <StatCard label="Active promos" value={String(activePromotions.length)} />
+        <StatCard label="Accounts" value={String(accounts.length)} />
+        <StatCard label="Total promos" value={String(promotions.length)} />
+        <StatCard label="Orders" value={String(recentOrders.length)} />
       </div>
 
-      <Panel>
-        <PanelHeader>
-          <PanelTitle>Bots</PanelTitle>
-          <Link href="/bots" className="text-xs text-signal">View all</Link>
+      <Panel className="border-4 border-black bg-white rounded-none">
+        <PanelHeader className="border-b-4 border-black px-4 py-3 flex justify-between items-center bg-cyan-300">
+          <PanelTitle className="text-black font-black uppercase tracking-widest flex items-center gap-2"><TerminalSquare size={20} strokeWidth={2.5}/> Bots Registry</PanelTitle>
+          <Link href="/bots" className="text-xs font-black uppercase text-black border-b-2 border-black hover:bg-black hover:text-white px-1">View All</Link>
         </PanelHeader>
         <PanelBody className="p-0">
           {bots.length === 0 ? (
-            <EmptyRow message="No bots yet. Connect an account and create your first bot in paper mode." />
+            <EmptyRow message="No bots initiated. Start your engine." />
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-ink-600 text-left text-xs text-ash-400">
-                  <th className="px-4 py-2 font-normal">Bot</th>
-                  <th className="px-4 py-2 font-normal">Strategy</th>
-                  <th className="px-4 py-2 font-normal">Mode</th>
-                  <th className="px-4 py-2 font-normal">Status</th>
-                  <th className="px-4 py-2 font-normal">Started</th>
+                <tr className="border-b-4 border-black text-left text-xs text-black font-black uppercase bg-gray-100">
+                  <th className="px-4 py-3">Identifier</th>
+                  <th className="px-4 py-3">Protocol</th>
+                  <th className="px-4 py-3">Mode</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Boot Time</th>
                 </tr>
               </thead>
               <tbody>
                 {bots.slice(0, 6).map((bot) => (
-                  <tr key={bot.id} className="border-b border-ink-600/60 last:border-0 hover:bg-ink-700/40">
+                  <tr key={bot.id} className="border-b-2 border-black last:border-0 hover:bg-yellow-200">
                     <td className="px-4 py-3">
-                      <Link href={`/bots/${bot.id}`} className="text-ash-50 hover:text-signal">{bot.name}</Link>
+                      <Link href={`/bots/${bot.id}`} className="text-black font-black hover:underline">{bot.name}</Link>
                     </td>
-                    <td className="px-4 py-3 text-ash-400">{bot.strategy_name ?? "—"}</td>
+                    <td className="px-4 py-3 text-black font-semibold">{bot.strategy_name ?? "N/A"}</td>
                     <td className="px-4 py-3">
-                      <Badge tone={bot.mode === "LIVE" ? "signal" : "muted"}>{bot.mode}</Badge>
+                      <Badge tone={bot.mode === "LIVE" ? "signal" : "muted"} className="border-2 border-black rounded-none uppercase font-bold">{bot.mode}</Badge>
                     </td>
-                    <td className="px-4 py-3"><Badge tone={statusTone(bot.status)}>{bot.status}</Badge></td>
-                    <td className="px-4 py-3 tabular text-ash-400">{formatDateTime(bot.started_at)}</td>
+                    <td className="px-4 py-3"><Badge tone={statusTone(bot.status)} className="border-2 border-black rounded-none uppercase font-bold">{bot.status}</Badge></td>
+                    <td className="px-4 py-3 tabular-nums text-black font-bold">{formatDateTime(bot.started_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -124,33 +125,33 @@ export default async function DashboardPage() {
       </Panel>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Panel>
-          <PanelHeader>
-            <PanelTitle>Active promotions</PanelTitle>
-            <Link href="/promotions" className="text-xs text-signal">View all</Link>
+        <Panel className="border-4 border-black bg-white rounded-none">
+          <PanelHeader className="border-b-4 border-black px-4 py-3 flex justify-between items-center bg-pink-300">
+            <PanelTitle className="text-black font-black uppercase tracking-widest">Active Promotions</PanelTitle>
+            <Link href="/promotions" className="text-xs font-black uppercase text-black border-b-2 border-black hover:bg-black hover:text-white px-1">View All</Link>
           </PanelHeader>
           <PanelBody className="p-0">
             {activePromotions.length === 0 ? (
-              <EmptyRow message="No active promotions. Create one and activate it to start tracking progress." />
+              <EmptyRow message="Zero active promotions detected." />
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-ink-600 text-left text-xs text-ash-400">
-                    <th className="px-4 py-2 font-normal">Promotion</th>
-                    <th className="px-4 py-2 font-normal">Qualifying volume</th>
-                    <th className="px-4 py-2 font-normal">Progress</th>
+                  <tr className="border-b-4 border-black text-left text-xs text-black font-black uppercase bg-gray-100">
+                    <th className="px-4 py-3">Campaign</th>
+                    <th className="px-4 py-3">Volume</th>
+                    <th className="px-4 py-3">Completion</th>
                   </tr>
                 </thead>
                 <tbody>
                   {activePromotions.map((p) => {
                     const progress = progressByPromotion.get(p.id);
                     return (
-                      <tr key={p.id} className="border-b border-ink-600/60 last:border-0 hover:bg-ink-700/40">
+                      <tr key={p.id} className="border-b-2 border-black last:border-0 hover:bg-yellow-200">
                         <td className="px-4 py-3">
-                          <Link href={`/promotions/${p.id}`} className="text-ash-50 hover:text-signal">{p.name}</Link>
+                          <Link href={`/promotions/${p.id}`} className="text-black font-black hover:underline">{p.name}</Link>
                         </td>
-                        <td className="px-4 py-3 tabular">{formatUsd(progress?.qualifying_volume)}</td>
-                        <td className="px-4 py-3 tabular">{formatPct(progress?.progress_pct)}</td>
+                        <td className="px-4 py-3 tabular-nums text-black font-bold">{formatUsd(progress?.qualifying_volume)}</td>
+                        <td className="px-4 py-3 tabular-nums text-black font-bold">{formatPct(progress?.progress_pct)}</td>
                       </tr>
                     );
                   })}
@@ -160,17 +161,19 @@ export default async function DashboardPage() {
           </PanelBody>
         </Panel>
 
-        <Panel>
-          <PanelHeader><PanelTitle>Ending soon</PanelTitle></PanelHeader>
+        <Panel className="border-4 border-black bg-white rounded-none">
+          <PanelHeader className="border-b-4 border-black px-4 py-3 bg-green-300">
+            <PanelTitle className="text-black font-black uppercase tracking-widest flex items-center gap-2"><Timer size={20} strokeWidth={2.5}/> Deadlines</PanelTitle>
+          </PanelHeader>
           <PanelBody className="p-0">
             {promotionsEndingSoon.length === 0 ? (
-              <EmptyRow message="No active promotions with a deadline." />
+              <EmptyRow message="No immediate deadlines." />
             ) : (
-              <div className="flex flex-col divide-y divide-ink-600/60">
+              <div className="flex flex-col">
                 {promotionsEndingSoon.map((p) => (
-                  <Link key={p.id} href={`/promotions/${p.id}`} className="flex items-center justify-between px-4 py-3 hover:bg-ink-700/40">
-                    <span className="text-ash-50">{p.name}</span>
-                    <span className="tabular text-xs text-ash-400">{formatDateTime(p.end_time)}</span>
+                  <Link key={p.id} href={`/promotions/${p.id}`} className="flex items-center justify-between px-4 py-4 border-b-2 border-black last:border-0 hover:bg-yellow-200">
+                    <span className="text-black font-black uppercase">{p.name}</span>
+                    <span className="tabular-nums text-sm text-white bg-black px-2 py-1 font-bold">{formatDateTime(p.end_time)}</span>
                   </Link>
                 ))}
               </div>
@@ -179,35 +182,35 @@ export default async function DashboardPage() {
         </Panel>
       </div>
 
-      <Panel>
-        <PanelHeader>
-          <PanelTitle>Recent orders</PanelTitle>
-          <Link href="/bots" className="text-xs text-signal">View bots</Link>
+      <Panel className="border-4 border-black bg-white rounded-none">
+        <PanelHeader className="border-b-4 border-black px-4 py-3 flex justify-between items-center bg-purple-300">
+          <PanelTitle className="text-black font-black uppercase tracking-widest flex items-center gap-2"><Search size={20} strokeWidth={2.5}/> Transaction Log</PanelTitle>
+          <Link href="/bots" className="text-xs font-black uppercase text-black border-b-2 border-black hover:bg-black hover:text-white px-1">Check DB</Link>
         </PanelHeader>
         <PanelBody className="p-0">
           {recentOrders.length === 0 ? (
-            <EmptyRow message="No orders placed yet." />
+            <EmptyRow message="Transaction log empty." />
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-ink-600 text-left text-xs text-ash-400">
-                  <th className="px-4 py-2 font-normal">Time</th>
-                  <th className="px-4 py-2 font-normal">Pair</th>
-                  <th className="px-4 py-2 font-normal">Side</th>
-                  <th className="px-4 py-2 font-normal">Quantity</th>
-                  <th className="px-4 py-2 font-normal">Value</th>
-                  <th className="px-4 py-2 font-normal">Status</th>
+                <tr className="border-b-4 border-black text-left text-xs text-black font-black uppercase bg-gray-100">
+                  <th className="px-4 py-3">Timestamp</th>
+                  <th className="px-4 py-3">Asset</th>
+                  <th className="px-4 py-3">Action</th>
+                  <th className="px-4 py-3">Qty</th>
+                  <th className="px-4 py-3">Capital</th>
+                  <th className="px-4 py-3">State</th>
                 </tr>
               </thead>
               <tbody>
                 {recentOrders.map((o) => (
-                  <tr key={o.id} className="border-b border-ink-600/60 last:border-0">
-                    <td className="whitespace-nowrap px-4 py-2.5 tabular text-ash-400">{formatDateTime(o.created_at)}</td>
-                    <td className="px-4 py-2.5 text-ash-50">{o.symbol}</td>
-                    <td className="px-4 py-2.5"><Badge tone={o.side === "BUY" ? "up" : "down"}>{o.side}</Badge></td>
-                    <td className="px-4 py-2.5 tabular">{formatNumber(o.executed_quantity, 6)}</td>
-                    <td className="px-4 py-2.5 tabular">{formatUsd(o.cumulative_quote_quantity)}</td>
-                    <td className="px-4 py-2.5"><Badge tone={statusTone(o.status)}>{o.status}</Badge></td>
+                  <tr key={o.id} className="border-b-2 border-black last:border-0 hover:bg-yellow-200">
+                    <td className="whitespace-nowrap px-4 py-3 tabular-nums text-black font-bold">{formatDateTime(o.created_at)}</td>
+                    <td className="px-4 py-3 text-black font-black uppercase">{o.symbol}</td>
+                    <td className="px-4 py-3"><Badge tone={o.side === "BUY" ? "up" : "down"} className="border-2 border-black rounded-none uppercase font-bold">{o.side}</Badge></td>
+                    <td className="px-4 py-3 tabular-nums text-black font-bold">{formatNumber(o.executed_quantity, 6)}</td>
+                    <td className="px-4 py-3 tabular-nums text-black font-bold">{formatUsd(o.cumulative_quote_quantity)}</td>
+                    <td className="px-4 py-3"><Badge tone={statusTone(o.status)} className="border-2 border-black rounded-none uppercase font-bold">{o.status}</Badge></td>
                   </tr>
                 ))}
               </tbody>
@@ -221,15 +224,20 @@ export default async function DashboardPage() {
 
 function StatCard({ label, value, tone }: { label: string; value: string; tone?: "signal" }) {
   return (
-    <Panel className="px-4 py-3">
-      <div className="text-xs text-ash-400">{label}</div>
-      <div className={`mt-1 text-2xl font-medium tabular ${tone === "signal" ? "text-signal" : "text-ash-50"}`}>
+    <div className={`border-2 border-black px-4 py-4 ${tone === "signal" ? "bg-yellow-100" : "bg-white"}`}>
+      <div className="text-xs font-black uppercase text-black tracking-widest">{label}</div>
+      <div className="mt-2 text-3xl font-black tabular-nums text-black">
         {value}
       </div>
-    </Panel>
+    </div>
   );
 }
 
 function EmptyRow({ message }: { message: string }) {
-  return <div className="px-4 py-8 text-center text-sm text-ash-400">{message}</div>;
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 px-4 py-12 text-center text-black font-bold">
+      <MonitorX size={40} strokeWidth={2.5} className="text-black" />
+      <span className="uppercase">{message}</span>
+    </div>
+  );
 }

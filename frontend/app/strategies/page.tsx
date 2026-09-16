@@ -7,7 +7,7 @@ import { Panel, PanelBody, PanelHeader, PanelTitle } from "@/components/ui/panel
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Pencil, Trash2, Bot as BotIcon } from "lucide-react";
+import { Pencil, Trash2, Bot as BotIcon, Sliders, Settings2, AlertOctagon, ServerCrash } from "lucide-react";
 
 export default function StrategiesPage() {
   const [configs, setConfigs] = useState<StrategyConfiguration[] | null>(null);
@@ -43,25 +43,47 @@ export default function StrategiesPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-lg font-semibold text-ash-50">Strategies</h1>
-        <p className="text-sm text-ash-400">Each strategy still passes every trade through risk and execution checks.</p>
+    <div className="flex flex-col gap-8 font-sans">
+      <div className="flex items-center gap-4 border-b-4 border-black pb-4">
+        <Sliders className="text-black" size={32} strokeWidth={2.5} />
+        <div>
+          <h1 className="text-3xl font-black text-black uppercase tracking-tight">Strategies</h1>
+          <p className="text-sm font-bold text-black mt-1 uppercase bg-yellow-200 inline-block px-2 border-2 border-black">
+            Risk & execution bounds applied to every trade.
+          </p>
+        </div>
       </div>
 
-      <Panel>
-        <PanelHeader><PanelTitle>Saved configurations</PanelTitle></PanelHeader>
+      <Panel className="border-4 border-black bg-white rounded-none shadow-[4px_4px_0px_rgba(0,0,0,1)]">
+        <PanelHeader className="border-b-4 border-black px-5 py-4 bg-cyan-300">
+          <PanelTitle className="text-black font-black uppercase tracking-widest flex items-center gap-2">
+            <Settings2 size={20} strokeWidth={2.5} /> Saved Configurations
+          </PanelTitle>
+        </PanelHeader>
         <PanelBody className="p-0">
-          {listError && <p className="px-4 py-3 text-sm text-market-down">{listError}</p>}
+          {listError && (
+            <div className="border-b-4 border-black bg-red-400 px-5 py-3 flex items-center gap-2 text-sm font-black text-black uppercase">
+              <AlertOctagon size={18} strokeWidth={2.5} /> {listError}
+            </div>
+          )}
           {configs === null ? (
-            <div className="px-4 py-8 text-center text-sm text-ash-400">Loading…</div>
+            <div className="px-5 py-16 text-center text-lg font-black uppercase text-black animate-pulse bg-gray-50">
+              Loading Parameters...
+            </div>
           ) : configs.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-ash-400">No strategy configurations yet.</div>
+            <div className="flex flex-col items-center justify-center px-5 py-16 text-center bg-gray-50">
+              <ServerCrash size={48} strokeWidth={2} className="text-black mb-4"/>
+              <div className="text-lg font-black uppercase text-black">No Configurations Found.</div>
+              <div className="text-sm font-bold text-gray-500 mt-2 uppercase">Create a new strategy below.</div>
+            </div>
           ) : (
-            <div className="flex flex-col divide-y divide-ink-600/60">
+            <div className="flex flex-col divide-y-4 divide-black">
               {configs.map((c) =>
                 editingId === c.id ? (
-                  <div key={c.id} className="p-4">
+                  <div key={c.id} className="p-5 bg-yellow-200 transition-none">
+                    <div className="mb-4 text-sm font-black text-black uppercase tracking-widest border-b-2 border-black pb-2 inline-block">
+                      Editing: {c.name}
+                    </div>
                     <EditStrategyForm
                       config={c}
                       onDone={async () => { setEditingId(null); await refresh(); }}
@@ -69,38 +91,50 @@ export default function StrategiesPage() {
                     />
                   </div>
                 ) : (
-                  <div key={c.id} className="flex flex-col gap-2 p-4">
-                    <div className="flex items-start justify-between gap-3">
+                  <div key={c.id} className="flex flex-col gap-4 p-5 bg-white hover:bg-gray-100 transition-none">
+                    <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                       <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-ash-50">{c.name}</span>
-                          <Badge>{typeInfo(c.strategy_type)?.label ?? c.strategy_type.replaceAll("_", " ")}</Badge>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="text-xl font-black text-black uppercase">{c.name}</span>
+                          <Badge tone="neutral" className="bg-white border-2 border-black text-black font-black shadow-[2px_2px_0px_rgba(0,0,0,1)] uppercase">
+                            {typeInfo(c.strategy_type)?.label ?? c.strategy_type.replaceAll("_", " ")}
+                          </Badge>
                         </div>
-                        <p className="mt-1 max-w-2xl text-sm text-ash-400">{c.description}</p>
+                        <p className="mt-2 text-sm font-bold text-gray-600 uppercase max-w-2xl leading-relaxed">
+                          {c.description || "No description provided."}
+                        </p>
                       </div>
                       <div className="flex shrink-0 gap-2">
                         <Button variant="secondary" onClick={() => setEditingId(c.id)}>
-                          <Pencil size={14} /> Edit
+                          <Pencil size={16} strokeWidth={2.5} /> Edit
                         </Button>
                         <Button variant="danger" onClick={() => handleDelete(c)}>
-                          <Trash2 size={14} /> Delete
+                          <Trash2 size={16} strokeWidth={2.5} /> Delete
                         </Button>
                       </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-ash-400">
-                      <span>
-                        Pairs:{" "}
-                        <span className="text-ash-200">
+                    
+                    {/* Parameters summary block */}
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-3 p-3 bg-gray-50 border-2 border-black">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">Pairs</span>
+                        <span className="text-sm font-bold text-black uppercase">
                           {Array.isArray(c.parameters.eligible_pairs) ? (c.parameters.eligible_pairs as string[]).join(", ") : "—"}
                         </span>
-                      </span>
-                      <span>
-                        Order size: <span className="tabular text-ash-200">{String(c.parameters.order_size ?? "—")} USDT</span>
-                      </span>
-                      <span className="inline-flex items-center gap-1.5">
-                        <BotIcon size={13} />
-                        {c.bot_count} bot{c.bot_count === 1 ? "" : "s"} using this
-                      </span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">Order Size</span>
+                        <span className="text-sm font-bold text-black tabular-nums uppercase">
+                          {String(c.parameters.order_size ?? "—")} USDT
+                        </span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">Usage</span>
+                        <span className="inline-flex items-center gap-1.5 text-sm font-black text-black uppercase">
+                          <BotIcon size={16} strokeWidth={2.5} />
+                          {c.bot_count} bot{c.bot_count === 1 ? "" : "s"}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 )
@@ -182,7 +216,7 @@ function EditStrategyForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4 md:max-w-lg">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5 md:max-w-2xl bg-white p-5 border-4 border-black shadow-[4px_4px_0px_rgba(0,0,0,1)]">
       <Field label="Name">
         <Input value={name} onChange={(e) => setName(e.target.value)} required />
       </Field>
@@ -193,7 +227,7 @@ function EditStrategyForm({
         <Input type="number" min="0" step="0.01" value={orderSize} onChange={(e) => setOrderSize(e.target.value)} required />
       </Field>
       {needsRoundTripTiming && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-4 border-l-4 border-black pl-4">
           <Field label="Buy interval (s)">
             <Input type="number" min="0" value={buyInterval} onChange={(e) => setBuyInterval(e.target.value)} />
           </Field>
@@ -203,7 +237,7 @@ function EditStrategyForm({
         </div>
       )}
       {needsQualityBounds && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-4 border-l-4 border-black pl-4">
           <Field label="Max spread (%)">
             <Input type="number" min="0" step="0.01" value={maxSpread} onChange={(e) => setMaxSpread(e.target.value)} />
           </Field>
@@ -213,7 +247,7 @@ function EditStrategyForm({
         </div>
       )}
       {needsPacingBounds && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-4 border-l-4 border-black pl-4">
           <Field label="Min interval (s)">
             <Input type="number" min="0" value={minInterval} onChange={(e) => setMinInterval(e.target.value)} />
           </Field>
@@ -222,9 +256,9 @@ function EditStrategyForm({
           </Field>
         </div>
       )}
-      {error && <p className="text-sm text-market-down">{error}</p>}
-      <div className="flex gap-2">
-        <Button type="submit" disabled={loading}>{loading ? "Saving…" : "Save changes"}</Button>
+      {error && <p className="text-sm font-black uppercase text-red-600 bg-red-100 p-2 border-2 border-red-600">{error}</p>}
+      <div className="flex gap-3 pt-2">
+        <Button type="submit" variant="primary" disabled={loading}>{loading ? "Saving…" : "Save Changes"}</Button>
         <Button type="button" variant="secondary" onClick={onCancel} disabled={loading}>Cancel</Button>
       </div>
     </form>
@@ -286,15 +320,19 @@ function NewStrategyForm({ types, onCreated }: { types: StrategyTypeInfo[]; onCr
   }
 
   return (
-    <Panel>
-      <PanelHeader><PanelTitle>New strategy configuration</PanelTitle></PanelHeader>
-      <PanelBody>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 md:max-w-lg">
+    <Panel className="border-4 border-black bg-white shadow-[4px_4px_0px_rgba(0,0,0,1)]">
+      <PanelHeader className="border-b-4 border-black bg-green-400 px-5 py-4">
+        <PanelTitle className="text-black font-black uppercase tracking-widest flex items-center gap-2">
+          New Strategy Configuration
+        </PanelTitle>
+      </PanelHeader>
+      <PanelBody className="bg-gray-50 p-5">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5 md:max-w-2xl">
           <Field label="Name">
             <Input value={name} onChange={(e) => setName(e.target.value)} required placeholder="e.g. SOL/ETH interval farm" />
           </Field>
 
-          <Field label="Strategy type" hint={selectedInfo?.description}>
+          <Field label="Strategy Type" hint={selectedInfo?.description}>
             <Select value={strategyType} onChange={(e) => setStrategyType(e.target.value as StrategyType)}>
               {(types.length ? types : []).map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
@@ -302,50 +340,50 @@ function NewStrategyForm({ types, onCreated }: { types: StrategyTypeInfo[]; onCr
             </Select>
           </Field>
 
-          <Field label="Eligible pairs" hint="Comma-separated. Multi-pair rotation needs at least 2.">
+          <Field label="Eligible Pairs" hint="Comma-separated. Multi-pair rotation needs at least 2.">
             <Input value={eligiblePairs} onChange={(e) => setEligiblePairs(e.target.value)} required />
           </Field>
 
-          <Field label="Order size (USDT)">
+          <Field label="Order Size (USDT)">
             <Input type="number" min="0" step="0.01" value={orderSize} onChange={(e) => setOrderSize(e.target.value)} required />
           </Field>
 
           {needsRoundTripTiming && (
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Buy interval (s)">
+            <div className="grid grid-cols-2 gap-4 border-l-4 border-black pl-4 bg-white p-3 shadow-[2px_2px_0px_rgba(0,0,0,1)]">
+              <Field label="Buy Interval (s)">
                 <Input type="number" min="0" value={buyInterval} onChange={(e) => setBuyInterval(e.target.value)} />
               </Field>
-              <Field label="Sell interval (s)">
+              <Field label="Sell Interval (s)">
                 <Input type="number" min="0" value={sellInterval} onChange={(e) => setSellInterval(e.target.value)} />
               </Field>
             </div>
           )}
 
           {needsQualityBounds && (
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Max spread (%)">
+            <div className="grid grid-cols-2 gap-4 border-l-4 border-black pl-4 bg-white p-3 shadow-[2px_2px_0px_rgba(0,0,0,1)]">
+              <Field label="Max Spread (%)">
                 <Input type="number" min="0" step="0.01" value={maxSpread} onChange={(e) => setMaxSpread(e.target.value)} />
               </Field>
-              <Field label="Max slippage (%)">
+              <Field label="Max Slippage (%)">
                 <Input type="number" min="0" step="0.01" value={maxSlippage} onChange={(e) => setMaxSlippage(e.target.value)} />
               </Field>
             </div>
           )}
 
           {needsPacingBounds && (
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Min interval (s)">
+            <div className="grid grid-cols-2 gap-4 border-l-4 border-black pl-4 bg-white p-3 shadow-[2px_2px_0px_rgba(0,0,0,1)]">
+              <Field label="Min Interval (s)">
                 <Input type="number" min="0" value={minInterval} onChange={(e) => setMinInterval(e.target.value)} />
               </Field>
-              <Field label="Max interval (s)">
+              <Field label="Max Interval (s)">
                 <Input type="number" min="0" value={maxInterval} onChange={(e) => setMaxInterval(e.target.value)} />
               </Field>
             </div>
           )}
 
-          {error && <p className="text-sm text-market-down">{error}</p>}
-          <Button type="submit" disabled={loading} className="self-start">
-            {loading ? "Saving…" : "Save configuration"}
+          {error && <p className="text-sm font-black uppercase text-red-600 bg-red-100 p-3 border-2 border-red-600">{error}</p>}
+          <Button type="submit" variant="primary" disabled={loading} className="self-start mt-2">
+            {loading ? "Saving…" : "Save Configuration"}
           </Button>
         </form>
       </PanelBody>
