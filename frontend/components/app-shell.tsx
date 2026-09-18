@@ -80,28 +80,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </button>
       </header>
 
-      <main className="flex-1 overflow-x-hidden pb-20 md:pb-0 bg-white">
+      <main className="flex-1 overflow-x-hidden pb-16 md:pb-0 bg-white">
         <div className="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-8">{children}</div>
       </main>
 
-      {/* Mobile bottom nav */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex justify-around border-t-4 border-black bg-white py-2 md:hidden">
-        {NAV_ITEMS.slice(0, 5).map((item) => {
-          const active = pathname?.startsWith(item.href);
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex flex-col items-center gap-1 px-3 py-2 border-2 transition-none ${
-                active ? "border-black bg-yellow-400 text-black shadow-[2px_2px_0px_rgba(0,0,0,1)]" : "border-transparent text-black"
-              }`}
-            >
-              <Icon size={22} strokeWidth={2.5} />
-              <span className="text-[10px] font-black uppercase tracking-widest">{item.label}</span>
-            </Link>
-          );
-        })}
+      {/* Mobile bottom nav — horizontal scroll so all tabs are reachable */}
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t-4 border-black bg-white md:hidden overflow-x-auto overscroll-x-contain">
+        <div className="flex w-max min-w-full justify-start gap-1 px-2 py-1.5">
+          {NAV_ITEMS.map((item) => {
+            const active = pathname?.startsWith(item.href);
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex shrink-0 flex-col items-center gap-0.5 px-2.5 py-1.5 border-2 transition-none ${
+                  active
+                    ? "border-black bg-yellow-400 text-black shadow-[2px_2px_0px_rgba(0,0,0,1)]"
+                    : "border-transparent text-black"
+                }`}
+              >
+                <Icon size={18} strokeWidth={2.5} />
+                <span className="text-[9px] font-black uppercase tracking-widest whitespace-nowrap">
+                  {item.label}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
       </nav>
     </div>
   );
