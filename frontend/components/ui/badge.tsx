@@ -10,9 +10,21 @@ const tones: Record<Tone, string> = {
   muted: "bg-gray-200 text-gray-500 border-black opacity-80",
 };
 
-export function Badge({ tone = "neutral", children }: { tone?: Tone; children: React.ReactNode }) {
+type BadgeProps = {
+  tone?: Tone;
+  children: React.ReactNode;
+  className?: string;
+};
+
+export function Badge({ tone = "neutral", children, className }: BadgeProps) {
   return (
-    <span className={cn("inline-flex items-center rounded-none border-2 px-2 py-1 text-xs font-black uppercase tracking-widest", tones[tone])}>
+    <span
+      className={cn(
+        "inline-flex items-center rounded-none border-2 px-2 py-1 text-xs font-black uppercase tracking-widest",
+        tones[tone],
+        className
+      )}
+    >
       {children}
     </span>
   );
