@@ -8,10 +8,10 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants: Record<Variant, string> = {
-  primary: "bg-signal text-ink-950 hover:bg-signal-dim disabled:opacity-40",
-  secondary: "bg-ink-700 text-ash-50 border border-ink-500 hover:bg-ink-600 disabled:opacity-40",
-  danger: "bg-market-down/90 text-ash-50 hover:bg-market-down disabled:opacity-40",
-  ghost: "text-ash-200 hover:bg-ink-700 disabled:opacity-40",
+  primary: "bg-yellow-400 text-black border-black hover:bg-black hover:text-white shadow-[4px_4px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1",
+  secondary: "bg-white text-black border-black hover:bg-gray-200 shadow-[4px_4px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1",
+  danger: "bg-red-500 text-black border-black hover:bg-black hover:text-white shadow-[4px_4px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1",
+  ghost: "text-black border-transparent hover:border-black hover:bg-yellow-200",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -19,7 +19,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     <button
       ref={ref}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded px-3.5 py-2 text-sm font-medium transition-colors",
+        "inline-flex items-center justify-center gap-2 rounded-none border-2 px-5 py-2.5 text-sm font-black uppercase tracking-widest transition-all duration-75 disabled:opacity-50 disabled:cursor-not-allowed",
         "min-h-[40px]",
         variants[variant],
         className

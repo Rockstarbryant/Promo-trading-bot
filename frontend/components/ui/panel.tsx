@@ -4,7 +4,7 @@ import type { HTMLAttributes } from "react";
 export function Panel({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("border border-ink-600 bg-ink-800 rounded", className)}
+      className={cn("border-4 border-black bg-white rounded-none shadow-[4px_4px_0px_rgba(0,0,0,1)] mb-4", className)}
       {...props}
     />
   );
@@ -13,16 +13,16 @@ export function Panel({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
 export function PanelHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("flex items-center justify-between px-4 py-3 border-b border-ink-600", className)}
+      className={cn("flex items-center justify-between px-5 py-4 border-b-4 border-black bg-cyan-300", className)}
       {...props}
     />
   );
 }
 
 export function PanelTitle({ className, ...props }: HTMLAttributes<HTMLHeadingElement>) {
-  return <h2 className={cn("text-sm font-medium text-ash-50", className)} {...props} />;
+  return <h2 className={cn("text-base font-black uppercase tracking-widest text-black flex items-center gap-2", className)} {...props} />;
 }
 
 export function PanelBody({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("p-4", className)} {...props} />;
+  return <div className={cn("p-5", className)} {...props} />;
 }

@@ -3,16 +3,16 @@ import { cn } from "@/lib/utils";
 type Tone = "neutral" | "up" | "down" | "signal" | "muted";
 
 const tones: Record<Tone, string> = {
-  neutral: "bg-ink-700 text-ash-50 border-ink-500",
-  up: "bg-market-up/10 text-market-up border-market-up/40",
-  down: "bg-market-down/10 text-market-down border-market-down/40",
-  signal: "bg-signal/10 text-signal border-signal/40",
-  muted: "bg-ink-700 text-ash-400 border-ink-600",
+  neutral: "bg-white text-black border-black",
+  up: "bg-green-400 text-black border-black",
+  down: "bg-red-500 text-black border-black",
+  signal: "bg-yellow-400 text-black border-black",
+  muted: "bg-gray-200 text-gray-500 border-black opacity-80",
 };
 
 export function Badge({ tone = "neutral", children }: { tone?: Tone; children: React.ReactNode }) {
   return (
-    <span className={cn("inline-flex items-center rounded border px-2 py-0.5 text-xs font-medium", tones[tone])}>
+    <span className={cn("inline-flex items-center rounded-none border-2 px-2 py-1 text-xs font-black uppercase tracking-widest", tones[tone])}>
       {children}
     </span>
   );
