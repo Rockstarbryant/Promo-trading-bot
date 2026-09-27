@@ -37,8 +37,26 @@ export interface BinanceAccount {
   api_key: string;
   can_trade: boolean;
   can_withdraw: boolean;
+  withdrawal_enabled: boolean;
   is_active: boolean;
   last_verified_at: string | null;
+}
+
+export type WithdrawalStatus = "PENDING" | "SUBMITTED" | "FAILED";
+
+export interface Withdrawal {
+  id: string;
+  binance_account_id: string;
+  asset: string;
+  network: string | null;
+  address: string;
+  address_tag: string | null;
+  amount: string;
+  status: WithdrawalStatus;
+  binance_withdraw_id: string | null;
+  binance_status: string | null;
+  failure_reason: string | null;
+  created_at: string;
 }
 
 export interface AssetBalance {

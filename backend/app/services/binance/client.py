@@ -8,7 +8,16 @@ Security:
 - The API secret is only ever held in memory for the duration of a single
   client instance's use and is never logged. Signed query strings (which
   contain the signature) are also never logged.
-- This client does NOT implement withdrawals. There is no method for it.
+- `withdraw()` exists (see below) but is never called from anywhere in the
+  autonomous trading loop (`app/workers/bot_worker.py` has no reference to
+  it and never will). It is reachable only from the explicit,
+  user-initiated endpoints in `app/api/accounts.py`, which additionally
+  require a separate per-account application-level opt-in
+  (`BinanceAccount.withdrawal_enabled`) on top of Binance's own
+  `canWithdraw` key permission. This keeps the original safety principle —
+  nothing that runs unattended can ever move funds off the exchange —
+  intact even though the app now supports withdrawals as a deliberate,
+  manual, audited action.
 """
 from __future__ import annotations
 
@@ -159,7 +168,6 @@ class BinanceSpotClient:
         )
 
     # -- trading -----------------------------------------------------------
-    # NOTE: no withdrawal methods exist on this client by design.
 
     async def place_order(
         self,
@@ -203,3 +211,46 @@ class BinanceSpotClient:
         return await self._request(
             "DELETE", "/api/v3/openOrders", {"symbol": symbol}, signed=True
         )
+
+    # -- withdrawals ---------------------------------------------------------
+    # Deliberately isolated at the bottom of the client and never imported by
+    # app/workers/*. Only app/api/accounts.py calls these, and only behind
+    # the withdrawal_enabled + canWithdraw checks described in that module.
+
+    async def withdraw(
+        self,
+        coin: str,
+        address: str,
+        amount: str,
+        network: Optional[str] = None,
+        address_tag: Optional[str] = None,
+        withdraw_order_id: Optional[str] = None,
+    ) -> dict:
+        """POST /sapi/v1/capital/withdraw/apply — submits a withdrawal.
+
+        This calls Binance's real withdrawal endpoint. Binance itself
+        enforces the account's withdrawal whitelist/2FA settings; this
+        client does not (and cannot) bypass those. Returns Binance's
+        response, which includes an `id` (Binance's withdrawal id) on
+        success.
+        """
+        params: dict[str, Any] = {"coin": coin, "address": address, "amount": amount}
+        if network:
+            params["network"] = network
+        if address_tag:
+            params["addressTag"] = address_tag
+        if withdraw_order_id:
+            params["withdrawOrderId"] = withdraw_order_id
+        return await self._request("POST", "/sapi/v1/capital/withdraw/apply", params, signed=True)
+
+    async def get_withdraw_history(
+        self, coin: Optional[str] = None, withdraw_order_id: Optional[str] = None, limit: int = 100
+    ) -> list:
+        """GET /sapi/v1/capital/withdraw/history — used to refresh the
+        status of a previously submitted withdrawal."""
+        params: dict[str, Any] = {"limit": limit}
+        if coin:
+            params["coin"] = coin
+        if withdraw_order_id:
+            params["withdrawOrderId"] = withdraw_order_id
+        return await self._request("GET", "/sapi/v1/capital/withdraw/history", params, signed=True)

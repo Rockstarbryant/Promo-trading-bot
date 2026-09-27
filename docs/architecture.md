@@ -81,11 +81,14 @@ the rest of the architecture (services layer) does not need to change.
   schema (`BinanceAccountOut` has no secret field at all).
 - Structured logging (`app/core/logging.py`) redacts any dict key that looks
   like a credential before it is ever written to a log line.
-- There is no withdrawal endpoint or client method anywhere in the codebase.
+- Withdrawals (`POST /api/accounts/{id}/withdrawals`) are isolated from
+  the rest of the app: only `app/api/accounts.py` calls
+  `BinanceSpotClient.withdraw()`, the trading workers never import it, and
+  a request is only accepted when Binance's own `canWithdraw` permission
+  AND a separate explicit per-account `withdrawal_enabled` opt-in are both
+  true. Every request is written to `AuditLog`.
 - Live trading requires both a deployment-level flag
-  (`ALLOW_LIVE_TRADING=true`) and a per-bot `mode=LIVE` choice, and is
-  refused outright if the connected API key has withdrawal permission
-  enabled.
+  (`ALLOW_LIVE_TRADING=true`) and a per-bot `mode=LIVE` choice.
 
 ## Backtest / replay foundation
 

@@ -88,6 +88,12 @@ class RiskEventSeverity(str, enum.Enum):
     CRITICAL = "CRITICAL"
 
 
+class WithdrawalStatus(str, enum.Enum):
+    PENDING = "PENDING"      # created locally, not yet accepted by Binance
+    SUBMITTED = "SUBMITTED"  # accepted by Binance, awaiting processing
+    FAILED = "FAILED"        # rejected by Binance or the request errored
+
+
 # --------------------------------------------------------------------------
 # Models
 # --------------------------------------------------------------------------
@@ -118,12 +124,17 @@ class BinanceAccount(Base, TimestampMixin):
     encrypted_api_secret: Mapped[str] = mapped_column(Text, nullable=False)
 
     can_trade: Mapped[bool] = mapped_column(Boolean, default=False)
-    can_withdraw: Mapped[bool] = mapped_column(Boolean, default=False)  # should always be False; enforced at API layer
+    can_withdraw: Mapped[bool] = mapped_column(Boolean, default=False)  # Binance-reported key permission; read-only, refreshed on (re)verify
+    # Separate, explicit application-level opt-in. Both this AND can_withdraw
+    # must be true for the withdrawal endpoints to accept a request — Binance
+    # permission alone is not enough. Defaults to False; never set implicitly.
+    withdrawal_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_verified_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="binance_accounts")
     bots: Mapped[list["TradingBot"]] = relationship(back_populates="binance_account")
+    withdrawals: Mapped[list["Withdrawal"]] = relationship(back_populates="binance_account")
 
 
 class Promotion(Base, TimestampMixin):
@@ -343,6 +354,30 @@ class BotEvent(Base, TimestampMixin):
     data: Mapped[dict] = mapped_column(JSON, default=dict)
 
     bot: Mapped["TradingBot"] = relationship(back_populates="events")
+
+
+class Withdrawal(Base, TimestampMixin):
+    """A user-initiated withdrawal request submitted via Binance's
+    /sapi/v1/capital/withdraw/apply. Never created or referenced by the
+    autonomous trading workers — only by app/api/accounts.py."""
+    __tablename__ = "withdrawals"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    binance_account_id: Mapped[str] = mapped_column(String(36), ForeignKey("binance_accounts.id"), nullable=False)
+
+    asset: Mapped[str] = mapped_column(String(20), nullable=False)
+    network: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    address: Mapped[str] = mapped_column(String(255), nullable=False)
+    address_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+
+    status: Mapped[WithdrawalStatus] = mapped_column(Enum(WithdrawalStatus), default=WithdrawalStatus.PENDING, nullable=False)
+    binance_withdraw_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    binance_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    binance_account: Mapped["BinanceAccount"] = relationship(back_populates="withdrawals")
 
 
 class AuditLog(Base, TimestampMixin):

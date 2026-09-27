@@ -51,8 +51,10 @@ def create_app() -> FastAPI:
             "trading volume programs. Paper trading is the default; live "
             "trading requires explicit deployment-level and per-account opt-in. "
             "This application does not implement wash trading, spoofing, or "
-            "any other market-manipulation technique, and has no withdrawal "
-            "capability."
+            "any other market-manipulation technique. Withdrawals are "
+            "supported as a separate, explicit, per-account, audited action "
+            "(/api/accounts/{id}/withdrawals) — the autonomous trading "
+            "workers have no code path to them and can never trigger one."
         ),
         version="1.0.0",
         lifespan=lifespan,

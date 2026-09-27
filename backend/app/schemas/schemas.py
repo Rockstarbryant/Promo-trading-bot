@@ -49,9 +49,46 @@ class BinanceAccountOut(BaseModel):
     api_key: str
     can_trade: bool
     can_withdraw: bool
+    withdrawal_enabled: bool
     is_active: bool
     last_verified_at: Optional[datetime] = None
     # api_secret / encrypted_api_secret intentionally never included
+
+
+class WithdrawalSettingsUpdate(BaseModel):
+    """Explicit per-account opt-in/opt-out for the withdrawal endpoints.
+    Enabling this has no effect unless Binance also reports can_withdraw
+    True for the connected key."""
+    withdrawal_enabled: bool
+
+
+class WithdrawalCreate(BaseModel):
+    asset: str = Field(min_length=1, max_length=20)
+    address: str = Field(min_length=1, max_length=255)
+    amount: Decimal = Field(gt=0)
+    network: Optional[str] = None
+    address_tag: Optional[str] = None
+
+    @field_validator("asset")
+    @classmethod
+    def asset_upper(cls, v: str) -> str:
+        return v.strip().upper()
+
+
+class WithdrawalOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    binance_account_id: str
+    asset: str
+    network: Optional[str] = None
+    address: str
+    address_tag: Optional[str] = None
+    amount: Decimal
+    status: str
+    binance_withdraw_id: Optional[str] = None
+    binance_status: Optional[str] = None
+    failure_reason: Optional[str] = None
+    created_at: datetime
 
 
 class AssetBalanceOut(BaseModel):

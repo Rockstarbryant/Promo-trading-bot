@@ -36,7 +36,10 @@ be a safety action.
 
 A bot cannot go live unless: (a) the deployment sets
 `ALLOW_LIVE_TRADING=true`, (b) the bot's `mode` is explicitly set to
-`LIVE`, (c) the connected Binance account's key has trading permission, and
-(d) that key does **not** have withdrawal permission. Any one of these
-being false silently and safely falls back to (or refuses to leave) paper
-trading.
+`LIVE`, and (c) the connected Binance account's key has trading permission.
+Any one of these being false silently and safely falls back to (or refuses
+to leave) paper trading. Withdrawal permission on the key is not itself a
+gate on bot creation (Binance's account-level `canWithdraw` flag produced
+false positives when used that way) — the real control against a
+compromised or misbehaving bot moving funds is that the trading workers
+have no code path to a withdrawal call at all; see `docs/architecture.md`.

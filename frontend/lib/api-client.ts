@@ -8,6 +8,7 @@
 import type {
   AccountBalance, AnalyticsSummary, BinanceAccount, BotBalance, Order, Promotion,
   PromotionProgress, StrategyConfiguration, StrategyTypeInfo, TradingBot, User,
+  Withdrawal,
 } from "@/lib/types";
 
 class ApiClientError extends Error {
@@ -40,6 +41,17 @@ export const api = {
     request<BinanceAccount>("accounts", { method: "POST", body: JSON.stringify(payload) }),
   deleteAccount: (id: string) => request<void>(`accounts/${id}`, { method: "DELETE" }),
   getAccountBalance: (id: string) => request<AccountBalance>(`accounts/${id}/balance`),
+  setWithdrawalEnabled: (id: string, withdrawal_enabled: boolean) =>
+    request<BinanceAccount>(`accounts/${id}/withdrawal-settings`, {
+      method: "PATCH", body: JSON.stringify({ withdrawal_enabled }),
+    }),
+  createWithdrawal: (
+    id: string,
+    payload: { asset: string; address: string; amount: string; network?: string; address_tag?: string },
+  ) => request<Withdrawal>(`accounts/${id}/withdrawals`, { method: "POST", body: JSON.stringify(payload) }),
+  listWithdrawals: (id: string) => request<Withdrawal[]>(`accounts/${id}/withdrawals`),
+  getWithdrawal: (id: string, withdrawalId: string) =>
+    request<Withdrawal>(`accounts/${id}/withdrawals/${withdrawalId}`),
 
   // Promotions
   listPromotions: () => request<Promotion[]>("promotions"),

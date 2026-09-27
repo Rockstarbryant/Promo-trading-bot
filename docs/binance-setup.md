@@ -4,10 +4,13 @@
 2. Enable **only**:
    - "Enable Reading"
    - "Enable Spot & Margin Trading" (Spot only is used by this app)
-3. **Do not enable withdrawals.** This application never asks for
-   withdrawal permission and has no withdrawal endpoints — enabling it on
-   the key only creates unnecessary risk. If a key with withdrawal
-   permission is connected, the app will refuse to run it in LIVE mode.
+3. **Only enable withdrawals if you actually want to withdraw through this
+   app.** It's off by default and not required for trading or promotion
+   farming — enabling it on the key adds risk for no benefit unless you
+   plan to use `POST /api/accounts/{id}/withdrawals`. If you do enable it,
+   also set an address whitelist on Binance's side and turn on the app's
+   own `withdrawal_enabled` opt-in (Accounts page) before the endpoint will
+   accept a request — both are required.
 4. If your Binance account supports IP restrictions on API keys, restrict
    the key to your backend's outbound IP address.
 5. In the app, go to **Accounts -> Connect Binance Account** (or
