@@ -132,9 +132,34 @@ class BinanceAccount(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_verified_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Shared, DB-backed cache of GET /api/v3/account so every bot on this
+    # account (and every backend replica) doesn't independently re-fetch
+    # the same balances on every poll. See
+    # app/services/binance/account_cache.py for the read/write helpers and
+    # the TTL. balance_cache_json is a JSON-encoded list of
+    # {"asset","free","locked"} — the raw non-zero balances, unpriced.
+    balance_cache_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    balance_cache_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     user: Mapped["User"] = relationship(back_populates="binance_accounts")
     bots: Mapped[list["TradingBot"]] = relationship(back_populates="binance_account")
     withdrawals: Mapped[list["Withdrawal"]] = relationship(back_populates="binance_account")
+
+
+class BinanceRateLimitState(Base):
+    """Single-row, cluster-wide circuit breaker. Binance's 429/418 bans are
+    IP-scoped (not per API key), so this is intentionally one shared row —
+    id is always the literal string "global" — rather than one row per
+    account. Every backend replica reads this before calling any signed
+    Binance endpoint and writes to it whenever Binance returns 429/418, so
+    a ban discovered by one request (any account, any pod) stops every
+    other pod from continuing to hammer Binance (and thereby extending the
+    ban) for the same outage."""
+    __tablename__ = "binance_rate_limit_state"
+
+    id: Mapped[str] = mapped_column(String(20), primary_key=True, default="global")
+    banned_until: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
 
 class Promotion(Base, TimestampMixin):

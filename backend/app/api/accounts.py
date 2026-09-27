@@ -32,7 +32,8 @@ from app.core.security import get_current_user_id
 from app.core.encryption import get_secret_box
 from app.services.binance.client import BinanceSpotClient
 from app.services.binance.exceptions import BinanceError
-from app.services.binance.balances import fetch_balances_with_usdt_value
+from app.services.binance.balances import price_non_zero_balances
+from app.services.binance.account_cache import get_account_snapshot
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
@@ -93,17 +94,28 @@ async def _get_owned_account(account_id: str, user_id: str, db: AsyncSession) ->
 async def get_account_balance(account_id: str, user_id: str = Depends(get_current_user_id), db: AsyncSession = Depends(get_db)):
     """Live Binance spot balances for this account, plus a best-effort
     total value in USDT (stablecoins counted 1:1, everything else priced
-    via its ASSETUSDT ticker). Read-only."""
+    via its ASSETUSDT ticker). Read-only.
+
+    Goes through account_cache.get_account_snapshot(), which serves a
+    short-lived shared cache and backs off entirely while Binance is
+    rate-limiting this IP — see that module for why. When cached/backed-off
+    data is returned, `error` carries an explanatory note rather than a
+    hard failure, since we may still have a perfectly good last-known
+    balance to show."""
     account = await _get_owned_account(account_id, user_id, db)
     secret = get_secret_box().decrypt(account.encrypted_api_secret)
     client = BinanceSpotClient(api_key=account.api_key, api_secret=secret)
     try:
-        balances, total = await fetch_balances_with_usdt_value(client)
+        non_zero, note, _from_cache = await get_account_snapshot(db, account, client)
+        if not non_zero and note:
+            return AccountBalanceOut(account_id=account.id, label=account.label, balances=[], total_usdt_value=None, error=note)
+        balances, total = await price_non_zero_balances(non_zero, client)
         return AccountBalanceOut(
             account_id=account.id,
             label=account.label,
             balances=[AssetBalanceOut(**b) for b in balances],
             total_usdt_value=total,
+            error=note,
         )
     except BinanceError as exc:
         return AccountBalanceOut(account_id=account.id, label=account.label, balances=[], total_usdt_value=None, error=exc.message)

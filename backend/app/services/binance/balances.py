@@ -4,6 +4,12 @@ USDT-denominated total across all held assets.
 
 Read-only. No trading, no withdrawals — this module only ever calls
 GET /api/v3/account and GET /api/v3/ticker/price.
+
+The raw GET /api/v3/account call itself is no longer made directly from
+here — see app/services/binance/account_cache.py, which wraps it with a
+shared cache and rate-limit circuit breaker. price_non_zero_balances()
+below only prices balances that have already been fetched (by the cache
+layer), so pricing a snapshot never triggers an extra Binance call.
 """
 from __future__ import annotations
 
@@ -38,48 +44,45 @@ def split_symbol_heuristic(symbol: str) -> tuple[str, str]:
     return symbol, ""
 
 
-async def fetch_balances_with_usdt_value(
-    client: BinanceSpotClient,
+async def price_non_zero_balances(
+    non_zero: list[dict], client: BinanceSpotClient,
 ) -> tuple[list[dict], Optional[Decimal]]:
-    """Returns (non_zero_balances, total_usdt_value_or_None).
+    """Takes the raw {"asset","free","locked"} list already fetched by
+    account_cache.get_account_snapshot() and attaches a "usdt_value" to
+    each entry (still makes one GET /api/v3/ticker/price per non-stable
+    asset held — those aren't cached, but they're unsigned/unweighted
+    public-data calls, not the signed endpoint that was getting banned).
 
-    Each balance dict is {"asset", "free", "locked", "usdt_value"} where
-    usdt_value may be None if no ASSETUSDT market/price could be found.
-    total_usdt_value is None only if every asset failed to price (e.g. the
-    account is empty or every ticker lookup failed).
+    Returns (priced_balances, total_usdt_value_or_None). total is None
+    only if every asset failed to price (e.g. the account is empty or
+    every ticker lookup failed).
     """
-    account = await client.get_account()
-    raw_balances = account.get("balances", [])
-
-    non_zero: list[dict] = []
-    for b in raw_balances:
-        try:
-            free = Decimal(str(b.get("free", "0")))
-            locked = Decimal(str(b.get("locked", "0")))
-        except InvalidOperation:
-            continue
-        if free == 0 and locked == 0:
-            continue
-        non_zero.append({"asset": b["asset"], "free": free, "locked": locked})
-
+    priced: list[dict] = []
     total = Decimal(0)
     any_priced = False
     for entry in non_zero:
         asset = entry["asset"]
-        qty = entry["free"] + entry["locked"]
+        try:
+            free = Decimal(str(entry.get("free", "0")))
+            locked = Decimal(str(entry.get("locked", "0")))
+        except InvalidOperation:
+            continue
+        qty = free + locked
+        out = {"asset": asset, "free": free, "locked": locked}
         if asset in STABLE_ASSETS:
-            entry["usdt_value"] = qty
+            out["usdt_value"] = qty
             total += qty
             any_priced = True
-            continue
-        try:
-            ticker = await client.get_ticker_price(f"{asset}USDT")
-            price = Decimal(str(ticker["price"]))
-            value = qty * price
-            entry["usdt_value"] = value
-            total += value
-            any_priced = True
-        except (BinanceError, InvalidOperation, KeyError):
-            entry["usdt_value"] = None
+        else:
+            try:
+                ticker = await client.get_ticker_price(f"{asset}USDT")
+                price = Decimal(str(ticker["price"]))
+                value = qty * price
+                out["usdt_value"] = value
+                total += value
+                any_priced = True
+            except (BinanceError, InvalidOperation, KeyError):
+                out["usdt_value"] = None
+        priced.append(out)
 
-    return non_zero, (total if any_priced else None)
+    return priced, (total if any_priced else None)

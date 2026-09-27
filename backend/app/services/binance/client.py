@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 import time
 from typing import Any, Optional
 from urllib.parse import urlencode
@@ -33,6 +34,8 @@ from app.config import get_settings
 from app.services.binance.exceptions import (
     BinanceAuthError, BinanceError, BinanceRateLimitError,
 )
+
+_BANNED_UNTIL_RE = re.compile(r"banned until (\d+)")
 
 
 class BinanceSpotClient:
@@ -104,8 +107,25 @@ class BinanceSpotClient:
             raise BinanceError(f"Network error calling Binance: {exc}") from exc
 
         if resp.status_code == 429 or resp.status_code == 418:
+            msg = "Binance rate limit exceeded"
+            retry_after: int | None = None
+            banned_until: int | None = None
+            if "Retry-After" in resp.headers:
+                try:
+                    retry_after = int(resp.headers["Retry-After"])
+                except (TypeError, ValueError):
+                    retry_after = None
+            try:
+                body = resp.json()
+                msg = body.get("msg", msg)
+            except Exception:
+                pass
+            match = _BANNED_UNTIL_RE.search(msg)
+            if match:
+                banned_until = int(match.group(1))
             raise BinanceRateLimitError(
-                "Binance rate limit exceeded", status_code=resp.status_code
+                msg, status_code=resp.status_code,
+                retry_after_seconds=retry_after, banned_until_ms=banned_until,
             )
 
         if resp.status_code >= 400:

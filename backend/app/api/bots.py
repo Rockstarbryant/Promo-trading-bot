@@ -21,6 +21,7 @@ from app.services.binance.client import BinanceSpotClient
 from app.services.binance.exceptions import BinanceError
 from app.services.binance.symbol_repository import SymbolRepository
 from app.services.binance.balances import split_symbol_heuristic
+from app.services.binance.account_cache import get_account_snapshot
 from app.workers.bot_worker import bot_runner_registry
 from app.api.websocket import manager as ws_manager
 
@@ -218,8 +219,8 @@ async def get_bot_balance(bot_id: str, user_id: str = Depends(get_current_user_i
         except BinanceError:
             base_asset, quote_asset = split_symbol_heuristic(symbol)
 
-        account_info = await client.get_account()
-        balances_by_asset = {b["asset"]: b for b in account_info.get("balances", [])}
+        account_info_balances, note, _from_cache = await get_account_snapshot(db, account, client)
+        balances_by_asset = {b["asset"]: b for b in account_info_balances}
         base_bal = balances_by_asset.get(base_asset, {"free": "0", "locked": "0"})
         quote_bal = balances_by_asset.get(quote_asset, {"free": "0", "locked": "0"})
 
@@ -232,6 +233,7 @@ async def get_bot_balance(bot_id: str, user_id: str = Depends(get_current_user_i
             quote_asset=quote_asset,
             quote_free=_safe_decimal(quote_bal.get("free")),
             quote_locked=_safe_decimal(quote_bal.get("locked")),
+            error=note,
         )
     except BinanceError as exc:
         return BotBalanceOut(bot_id=bot.id, symbol=symbol, error=exc.message)
